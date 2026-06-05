@@ -148,7 +148,6 @@
   <div id="bar">
     <button class="tool" id="tFeed"><span class="e">🍓</span><span class="l">Feed</span></button>
     <button class="tool" id="tPlay"><span class="e">🎣</span><span class="l">Play</span></button>
-    <button class="tool" id="tSleep"><span class="e">💤</span><span class="l">Sleep</span></button>
     <button class="tool" id="tShop"><span class="e">🪙</span><span class="l">Earn</span></button>
   </div>
 
@@ -237,6 +236,7 @@ const FOODS = [
 // ---- decay per real hour (cozy & slow). Energy regenerates while asleep. ----
 const DECAY = { full: 7, happy: 4.5, energyAwake: 5.5, energyAsleep: -22 };
 const MAX_CATCHUP_H = 36;     // cap offline simulation so it never feels punishing
+const TIRED_SLEEP_AT = 15;    // pet auto-naps when energy crosses this threshold
 
 let S = null;        // game state
 let now = () => Date.now();
@@ -341,24 +341,35 @@ function freshState(){
 }
 
 // ---------- real-time needs decay ----------
+// Simulated in segments split at the awake→asleep transition so an offline
+// stretch that drains the pet past TIRED_SLEEP_AT lands the next session on
+// a sleeping pet. No auto-wake — the pet sleeps until tapped (cozy: come home
+// to a sleeping Mossling instead of one that re-tired itself overnight).
 function applyDecay(){
   const t = now();
-  let h = (t - S.lastTs) / 3.6e6;
-  if (h <= 0){ S.lastTs = t; return; }
-  h = Math.min(h, MAX_CATCHUP_H);
-  S.full   = clamp(S.full   - DECAY.full  * h);
-  S.happy  = clamp(S.happy  - DECAY.happy * h);
-  S.energy = clamp(S.energy - (S.asleep ? DECAY.energyAsleep : DECAY.energyAwake) * h);
-  // a hungry or exhausted pet loses a little extra cheer — but never below "wistful"
-  if (S.full < 25 || S.energy < 25) S.happy = Math.max(S.happy - 4*h, 18);
-  if (S.asleep && S.energy >= 100) S.asleep = false;   // wakes once fully rested
+  let hLeft = (t - S.lastTs) / 3.6e6;
+  if (hLeft <= 0){ S.lastTs = t; return; }
+  hLeft = Math.min(hLeft, MAX_CATCHUP_H);
+  while (hLeft > 1e-6){
+    let segH = hLeft;
+    if (!S.asleep && S.energy > TIRED_SLEEP_AT){            // schedule the nap onset
+      segH = Math.min(segH, (S.energy - TIRED_SLEEP_AT) / DECAY.energyAwake);
+    }
+    const eRate = S.asleep ? DECAY.energyAsleep : DECAY.energyAwake;
+    S.full   = clamp(S.full   - DECAY.full  * segH);
+    S.happy  = clamp(S.happy  - DECAY.happy * segH);
+    S.energy = clamp(S.energy - eRate * segH);
+    if (S.full < 25 || S.energy < 25) S.happy = Math.max(S.happy - 4*segH, 18);
+    hLeft -= segH;
+    if (!S.asleep && S.energy <= TIRED_SLEEP_AT + 0.01) S.asleep = true;
+  }
   S.lastTs = t;
 }
 function clamp(v){ return Math.max(0, Math.min(100, v)); }
 
 // ---------- mood ----------
 function mood(){
-  if (S.asleep) return { key:'sleep', tag:'sleeping soundly…' };
+  if (S.asleep) return { key:'sleep', tag:`${S.name} is sleeping… tap to wake them ☀️` };
   if (S.energy < 18) return { key:'tired', tag:`${S.name} can barely keep their eyes open` };
   if (S.full   < 20) return { key:'hungry', tag:`${S.name}'s tummy is rumbling` };
   if (S.happy  < 25) return { key:'sad',   tag:`${S.name} feels a little wistful` };
@@ -553,10 +564,15 @@ function drawZ(cx, cy, ts){
   ctx.globalAlpha=1;
 }
 
-// tap the pet to cuddle
+// tap the pet → wake if sleeping, otherwise cuddle
 cv.addEventListener('pointerdown', e=>{
   if (!S || !S.adopted) return;
-  if (S.asleep){ toast('shhh… they are sleeping 💤'); return; }
+  if (S.asleep){
+    S.asleep = false; S.lastTs = now();
+    sfx('wake'); save(); refresh();
+    toast(`Good morning, ${S.name}! ☀️`);
+    return;
+  }
   const r = cv.getBoundingClientRect();
   const x = e.clientX-r.left, y = e.clientY-r.top;
   S.happy = clamp(S.happy + 3);
@@ -567,15 +583,15 @@ cv.addEventListener('pointerdown', e=>{
 
 // ===================== UI WIRING =====================
 function refresh(){
+  const wasAwake = !S.asleep;
   applyDecay();
+  if (wasAwake && S.asleep){ sfx('sleep'); toast(`${S.name} yawned and curled up 💤`); }
   $('coinval').textContent = Math.floor(S.coins);
   $('petname').textContent = S.name || 'Mosslings';
   $('bFull').style.width   = S.full+'%';
   $('bHappy').style.width  = S.happy+'%';
   $('bEnergy').style.width = S.energy+'%';
   $('moodtag').textContent = mood().tag;
-  $('tSleep').querySelector('.l').textContent = S.asleep ? 'Wake' : 'Sleep';
-  $('tSleep').querySelector('.e').textContent = S.asleep ? '☀️' : '💤';
 }
 
 let toastT;
@@ -631,16 +647,7 @@ function feed(f){
   startFeed(f);                          // → flick-to-feed mini-game; coins debited on eat
 }
 
-// ---- sleep toggle ----
-function toggleSleep(){
-  if (!S.asleep && S.energy>=100){ toast(`${S.name} is wide awake!`); return; }
-  S.asleep = !S.asleep; S.lastTs = now(); save(); refresh();
-  sfx(S.asleep ? 'sleep' : 'wake');
-  toast(S.asleep ? `Goodnight, ${S.name} 💤` : `Good morning! ☀️`);
-}
-
 $('tFeed').onclick  = openFeed;
-$('tSleep').onclick = toggleSleep;
 $('tShop').onclick  = pickGame;
 $('tPlay').onclick  = pickGame;
 $('feedClose').onclick = ()=>$('ovFeed').classList.remove('show');
