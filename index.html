@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#f3e7d3">
+<title>Mossling</title>
+<!-- MOSSLING — cozy virtual pet, mobile-first prototype (v0.1). Neopets DNA:
+     adopt a little creature, keep it fed/happy/rested, earn coins in a mini-game,
+     spend them on snacks. Real-time needs decay; the pet never dies — it just gets
+     sleepy or wistful. Self-contained: vanilla JS + canvas, state in localStorage.
+     GDD: 03_creating/game-ideas/mossling.md. #LLM-generated -->
+<style>
+  :root{
+    --cream:#f3e7d3; --cream-2:#ecd9bf; --ink:#5a4a3a; --ink-soft:#8a7560;
+    --card:#fffaf1; --line:#e3d2b6;
+    --full:#e8a05a; --happy:#e07a9b; --energy:#6fb3c9;
+    --coin:#e6b84a; --btn:#fbf3e4; --btn-press:#efe0c6;
+    --shadow:0 6px 16px rgba(120,90,55,.18);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--cream);
+    font-family:'Quicksand',ui-rounded,'Segoe UI',system-ui,sans-serif;
+    color:var(--ink);-webkit-user-select:none;user-select:none;
+    touch-action:none;overscroll-behavior:none;}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;
+    max-width:560px;margin:0 auto;}
+
+  /* ---- top HUD ---- */
+  #hud{padding:max(10px,env(safe-area-inset-top)) 14px 8px;flex:0 0 auto;}
+  .hudtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  #petname{font-size:19px;font-weight:700;letter-spacing:.3px;}
+  #coins{display:flex;align-items:center;gap:6px;background:var(--card);
+    padding:5px 12px;border-radius:20px;box-shadow:var(--shadow);font-weight:700;font-size:15px;}
+  #coins .c{width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#f6d878,var(--coin));
+    box-shadow:inset 0 -2px 0 rgba(150,110,20,.35);}
+  .bars{display:flex;flex-direction:column;gap:7px;}
+  .bar{display:flex;align-items:center;gap:9px;}
+  .bar .ic{width:22px;text-align:center;font-size:16px;}
+  .bar .track{flex:1;height:13px;border-radius:8px;background:#0000000f;overflow:hidden;
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.08);}
+  .bar .fill{height:100%;width:50%;border-radius:8px;transition:width .35s ease;}
+  .bar.full .fill{background:linear-gradient(var(--full),#d88c44);}
+  .bar.happy .fill{background:linear-gradient(var(--happy),#cf6386);}
+  .bar.energy .fill{background:linear-gradient(var(--energy),#5aa0b8);}
+
+  /* ---- scene ---- */
+  #scene{position:relative;flex:1 1 auto;min-height:0;}
+  #c{display:block;width:100%;height:100%;}
+  #moodtag{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);
+    background:#fffaf1cc;backdrop-filter:blur(3px);padding:5px 14px;border-radius:16px;
+    font-size:13px;font-weight:600;color:var(--ink-soft);box-shadow:var(--shadow);
+    pointer-events:none;white-space:nowrap;}
+
+  /* ---- toolbar ---- */
+  #bar{flex:0 0 auto;display:flex;gap:10px;padding:10px 14px max(14px,env(safe-area-inset-bottom));}
+  .tool{flex:1;background:var(--btn);border:none;border-radius:18px;padding:11px 4px 9px;
+    box-shadow:var(--shadow);display:flex;flex-direction:column;align-items:center;gap:3px;
+    font-family:inherit;color:var(--ink);cursor:pointer;transition:transform .08s,background .1s;}
+  .tool:active{transform:translateY(2px) scale(.97);background:var(--btn-press);}
+  .tool .e{font-size:25px;line-height:1;}
+  .tool .l{font-size:11.5px;font-weight:700;letter-spacing:.2px;}
+
+  /* ---- overlays ---- */
+  .ov{position:absolute;inset:0;background:#3a2c1e66;backdrop-filter:blur(2px);
+    display:none;align-items:center;justify-content:center;padding:22px;z-index:20;}
+  .ov.show{display:flex;}
+  .sheet{background:var(--card);border-radius:24px;box-shadow:0 14px 40px rgba(70,50,30,.35);
+    width:100%;max-width:380px;padding:22px;text-align:center;animation:pop .25s ease;}
+  @keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+  .sheet h2{margin:0 0 4px;font-size:21px;}
+  .sheet p{margin:0 0 16px;color:var(--ink-soft);font-size:14px;line-height:1.45;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+  .pick{background:var(--btn);border:2px solid transparent;border-radius:18px;padding:12px;
+    width:96px;cursor:pointer;font-family:inherit;color:var(--ink);transition:.12s;}
+  .pick:active{transform:scale(.96);}
+  .pick.sel{border-color:var(--happy);background:#fff;}
+  .pick .pe{font-size:34px;}
+  .pick .pn{font-size:13px;font-weight:700;margin-top:4px;}
+  .pick .pd{font-size:11px;color:var(--ink-soft);margin-top:2px;}
+  input#nameIn{width:100%;padding:12px 14px;border-radius:14px;border:2px solid var(--line);
+    font-family:inherit;font-size:16px;color:var(--ink);text-align:center;margin:14px 0;background:#fff;}
+  input#nameIn:focus{outline:none;border-color:var(--happy);}
+  .btn{background:var(--happy);color:#fff;border:none;border-radius:16px;padding:13px 22px;
+    font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;box-shadow:var(--shadow);
+    transition:transform .08s,filter .1s;}
+  .btn:active{transform:translateY(2px) scale(.98);}
+  .btn:disabled{filter:grayscale(.6) opacity(.55);cursor:default;}
+  .btn.ghost{background:var(--btn);color:var(--ink-soft);box-shadow:none;}
+  .foods{display:flex;flex-direction:column;gap:9px;margin:6px 0 16px;}
+  .food{display:flex;align-items:center;gap:12px;background:var(--btn);border:none;border-radius:16px;
+    padding:11px 14px;font-family:inherit;color:var(--ink);cursor:pointer;text-align:left;transition:.1s;}
+  .food:active{transform:scale(.98);background:var(--btn-press);}
+  .food .fe{font-size:26px;}
+  .food .fmeta{flex:1;}
+  .food .fn{font-weight:700;font-size:15px;}
+  .food .fsub{font-size:12px;color:var(--ink-soft);}
+  .food .cost{display:flex;align-items:center;gap:4px;font-weight:700;font-size:14px;}
+  .food .cost .c{width:14px;height:14px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#f6d878,var(--coin));}
+  .food:disabled{filter:grayscale(.5) opacity(.5);}
+
+  /* mini-game */
+  #mg{position:absolute;inset:0;display:none;z-index:30;background:#2a2440;}
+  #mg.show{display:block;}
+  #mgc{display:block;width:100%;height:100%;}
+  #mghud{position:absolute;top:max(10px,env(safe-area-inset-top));left:0;right:0;
+    display:flex;justify-content:space-between;padding:0 18px;color:#fff;font-weight:700;
+    font-size:16px;text-shadow:0 1px 3px #0006;pointer-events:none;}
+  #mgmsg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;color:#fff;text-align:center;gap:14px;padding:24px;}
+  #mgmsg h2{margin:0;font-size:24px;}
+  #mgmsg p{margin:0;opacity:.85;font-size:14px;line-height:1.5;max-width:300px;}
+
+  .toast{position:absolute;left:50%;top:14px;transform:translateX(-50%) translateY(-12px);
+    background:#5a4a3a;color:#fff;padding:9px 18px;border-radius:18px;font-size:14px;font-weight:600;
+    opacity:0;transition:.3s;z-index:40;pointer-events:none;box-shadow:var(--shadow);white-space:nowrap;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div class="hudtop">
+      <div id="petname">Mossling</div>
+      <div id="coins"><span class="c"></span><span id="coinval">0</span></div>
+    </div>
+    <div class="bars">
+      <div class="bar full"><span class="ic">🍓</span><div class="track"><div class="fill" id="bFull"></div></div></div>
+      <div class="bar happy"><span class="ic">💞</span><div class="track"><div class="fill" id="bHappy"></div></div></div>
+      <div class="bar energy"><span class="ic">⚡</span><div class="track"><div class="fill" id="bEnergy"></div></div></div>
+    </div>
+  </div>
+
+  <div id="scene">
+    <canvas id="c"></canvas>
+    <div id="moodtag">…</div>
+  </div>
+
+  <div id="bar">
+    <button class="tool" id="tFeed"><span class="e">🍓</span><span class="l">Feed</span></button>
+    <button class="tool" id="tPlay"><span class="e">🎣</span><span class="l">Play</span></button>
+    <button class="tool" id="tSleep"><span class="e">💤</span><span class="l">Sleep</span></button>
+    <button class="tool" id="tShop"><span class="e">🪙</span><span class="l">Earn</span></button>
+  </div>
+
+  <!-- adopt overlay -->
+  <div class="ov" id="ovAdopt">
+    <div class="sheet">
+      <h2>Adopt a Mossling</h2>
+      <p>A little one has wandered into your garden. Choose who stays.</p>
+      <div class="row" id="speciesRow"></div>
+      <input id="nameIn" maxlength="12" placeholder="name your Mossling" autocomplete="off">
+      <button class="btn" id="adoptBtn" disabled>Bring them home</button>
+    </div>
+  </div>
+
+  <!-- feed overlay -->
+  <div class="ov" id="ovFeed">
+    <div class="sheet">
+      <h2>Snacks</h2>
+      <p id="feedSub">A little something to fill the tummy.</p>
+      <div class="foods" id="foodList"></div>
+      <button class="btn ghost" id="feedClose">Close</button>
+    </div>
+  </div>
+
+  <!-- mini-game chooser -->
+  <div class="ov" id="ovGames">
+    <div class="sheet">
+      <h2>Let's play!</h2>
+      <p>Earn a few coins and cheer up your Mossling.</p>
+      <div class="foods">
+        <button class="food" id="gKick"><span class="fe">⚽</span><span class="fmeta">
+          <div class="fn">Kick-a-Ball</div><div class="fsub">play together · big happiness</div></span></button>
+        <button class="food" id="gFirefly"><span class="fe">🎣</span><span class="fmeta">
+          <div class="fn">Firefly Catch</div><div class="fsub">tap fireflies · steady coins</div></span></button>
+      </div>
+      <button class="btn ghost" id="gamesClose">Close</button>
+    </div>
+  </div>
+
+  <!-- daily greeting + bonus -->
+  <div class="ov" id="ovDaily">
+    <div class="sheet">
+      <h2 id="dailyTitle">Hello!</h2>
+      <p id="dailySub">…</p>
+      <div id="dailyGift" style="font-size:56px;margin:2px 0 4px;line-height:1;">🎁</div>
+      <div id="dailyStreak" style="font-weight:700;color:var(--happy);margin-bottom:14px;"></div>
+      <button class="btn" id="dailyClaim">Open today's gift</button>
+    </div>
+  </div>
+
+  <!-- mini-game -->
+  <div id="mg">
+    <canvas id="mgc"></canvas>
+    <div id="mghud"><span>🪙 <span id="mgScore">0</span></span><span>⏱ <span id="mgTime">20</span></span></div>
+    <div id="mgmsg"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+// ===================== MOSSLING — cozy virtual pet =====================
+// #LLM-generated. Single file: model + real-time decay + canvas render + a
+// firefly-catching mini-game. State persists in localStorage; the pet "lives"
+// while you're away (needs drift slowly toward calm-but-wistful, never zero-out
+// into death — this is a cozy game).
+
+const KEY = 'mossling.save.v1';
+const $ = id => document.getElementById(id);
+
+// ---- species: drawn procedurally, no art assets ----
+const SPECIES = {
+  pip:  { name:'Pip',  desc:'forest',  body:'#9cc97f', belly:'#e7f0cf', cheek:'#f0a9b8', ear:'leaf'  },
+  tato: { name:'Tato', desc:'fungal',  body:'#caa3d8', belly:'#f2e3f6', cheek:'#f0a9b8', ear:'cap'   },
+  bubo: { name:'Bubo', desc:'dusk',    body:'#86b8d6', belly:'#dcecf5', cheek:'#eda9b0', ear:'tuft'  },
+};
+
+// ---- food shop: id, emoji, label, cost, fullness restored, joy bonus ----
+const FOODS = [
+  { id:'berry',  e:'🍓', n:'Sunberry',     sub:'+18 tummy',          cost:3,  fill:18, joy:3 },
+  { id:'honey',  e:'🍯', n:'Honey Drop',   sub:'+30 tummy · sweet',  cost:6,  fill:30, joy:7 },
+  { id:'mush',   e:'🍄', n:'Glow Cap',     sub:'+24 tummy',          cost:5,  fill:24, joy:4 },
+  { id:'cake',   e:'🧁', n:'Moss Cake',    sub:'+45 tummy · treat',  cost:12, fill:45, joy:12 },
+];
+
+// ---- decay per real hour (cozy & slow). Energy regenerates while asleep. ----
+const DECAY = { full: 7, happy: 4.5, energyAwake: 5.5, energyAsleep: -22 };
+const MAX_CATCHUP_H = 36;     // cap offline simulation so it never feels punishing
+
+let S = null;        // game state
+let now = () => Date.now();
+
+// ---------- persistence ----------
+function load(){
+  try { const r = JSON.parse(localStorage.getItem(KEY));
+    if (r && r.adopted){
+      if (r.streak === undefined) r.streak = 0;        // migrate pre-daily saves
+      if (r.lastVisitDay === undefined) r.lastVisitDay = '';
+      return r;
+    }
+  } catch(e){}
+  return null;
+}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
+
+function freshState(){
+  return { adopted:false, name:'', species:'pip',
+    coins:8, full:70, happy:70, energy:80,
+    asleep:false, lastTs:now(), born:now(),
+    lastVisitDay:'', streak:0 };
+}
+
+// ---------- real-time needs decay ----------
+function applyDecay(){
+  const t = now();
+  let h = (t - S.lastTs) / 3.6e6;
+  if (h <= 0){ S.lastTs = t; return; }
+  h = Math.min(h, MAX_CATCHUP_H);
+  S.full   = clamp(S.full   - DECAY.full  * h);
+  S.happy  = clamp(S.happy  - DECAY.happy * h);
+  S.energy = clamp(S.energy - (S.asleep ? DECAY.energyAsleep : DECAY.energyAwake) * h);
+  // a hungry or exhausted pet loses a little extra cheer — but never below "wistful"
+  if (S.full < 25 || S.energy < 25) S.happy = Math.max(S.happy - 4*h, 18);
+  if (S.asleep && S.energy >= 100) S.asleep = false;   // wakes once fully rested
+  S.lastTs = t;
+}
+function clamp(v){ return Math.max(0, Math.min(100, v)); }
+
+// ---------- mood ----------
+function mood(){
+  if (S.asleep) return { key:'sleep', tag:'sleeping soundly…' };
+  if (S.energy < 18) return { key:'tired', tag:`${S.name} can barely keep their eyes open` };
+  if (S.full   < 20) return { key:'hungry', tag:`${S.name}'s tummy is rumbling` };
+  if (S.happy  < 25) return { key:'sad',   tag:`${S.name} feels a little wistful` };
+  const avg = (S.full + S.happy + S.energy) / 3;
+  if (avg > 80 && S.happy > 78) return { key:'joy',  tag:`${S.name} is beaming!` };
+  if (avg > 60) return { key:'happy', tag:`${S.name} is content` };
+  return { key:'ok', tag:`${S.name} is pottering about` };
+}
+
+// ===================== RENDER (scene) =====================
+const cv = $('c'), ctx = cv.getContext('2d');
+let DPR=1, W=0, H=0;
+function resize(){
+  DPR = Math.min(2, window.devicePixelRatio||1);
+  const r = $('scene').getBoundingClientRect();
+  W = r.width; H = r.height;
+  cv.width = W*DPR; cv.height = H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize);
+
+// ambient: tint the room by the real local hour
+function ambient(){
+  const hr = new Date().getHours();
+  const night = hr < 6 || hr >= 20;
+  const dusk  = (hr>=18&&hr<20)||(hr>=6&&hr<8);
+  if (S && S.asleep) return { top:'#26243f', bot:'#3a3358', night:true, dim:.45 };
+  if (night) return { top:'#3b3a5c', bot:'#52507a', night:true, dim:.3 };
+  if (dusk)  return { top:'#f6c9a0', bot:'#f0d9c0', night:false, dim:.08 };
+  return { top:'#d9eefc', bot:'#fbeed6', night:false, dim:0 };
+}
+
+let particles = [];   // floating hearts / Zzz
+function spawnHearts(n,x,y){
+  for(let i=0;i<n;i++) particles.push({ x:x+(Math.random()-.5)*40, y, vy:-(.5+Math.random()*.6),
+    life:1, kind:'heart', wob:Math.random()*6.28, size:14+Math.random()*8 });
+}
+let stars=[]; for(let i=0;i<26;i++) stars.push({x:Math.random(),y:Math.random()*.6,p:Math.random()*6.28});
+
+let t0 = performance.now();
+function frame(ts){
+  const dt = Math.min(50, ts - t0); t0 = ts;
+  const A = ambient();
+  // sky
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,A.top); g.addColorStop(1,A.bot);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  if (A.night){
+    for(const s of stars){ s.p+=0.02;
+      ctx.globalAlpha = .4+.4*Math.sin(s.p);
+      ctx.fillStyle='#fff'; const sx=s.x*W, sy=s.y*H;
+      ctx.fillRect(sx,sy,2,2);
+    }
+    ctx.globalAlpha=1;
+  }
+
+  drawRoom(A);
+  const cx = W/2, cy = H*0.58;
+  drawCreature(cx, cy, ts);
+  drawZ(cx, cy, ts);
+
+  // particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i]; p.y+=p.vy*dt*0.06*16/16; p.wob+=0.1; p.life-=dt*0.0009;
+    if(p.life<=0){ particles.splice(i,1); continue; }
+    ctx.globalAlpha = Math.max(0,p.life);
+    ctx.font = `${p.size}px serif`; ctx.textAlign='center';
+    ctx.fillText('💗', p.x+Math.sin(p.wob)*8, p.y);
+    ctx.globalAlpha=1;
+  }
+  requestAnimationFrame(frame);
+}
+
+function drawRoom(A){
+  // floor
+  const fy = H*0.74;
+  ctx.fillStyle = A.night ? '#6b5a7a' : '#e7c89a';
+  ctx.fillRect(0,fy,W,H-fy);
+  ctx.fillStyle = A.night ? '#5d4e6b' : '#d9b787';
+  ctx.fillRect(0,fy,W,4);
+  // a little rug
+  ctx.fillStyle = A.night ? '#7a6790' : '#e89aa9';
+  ctx.beginPath(); ctx.ellipse(W/2, fy+(H-fy)*0.55, W*0.34, (H-fy)*0.32, 0,0,7); ctx.fill();
+  ctx.fillStyle = A.night ? '#8c79a3' : '#f2b3bf';
+  ctx.beginPath(); ctx.ellipse(W/2, fy+(H-fy)*0.55, W*0.24, (H-fy)*0.21, 0,0,7); ctx.fill();
+  // a potted plant in the corner
+  const px = W*0.84, pb = fy;
+  ctx.fillStyle = A.night?'#7a5e52':'#b9784f'; ctx.fillRect(px-14,pb-22,28,22);
+  ctx.fillStyle = A.night?'#5f8f6a':'#7bb87f';
+  for(const a of [-0.5,0,0.5]){ ctx.save(); ctx.translate(px,pb-22); ctx.rotate(a);
+    ctx.beginPath(); ctx.ellipse(0,-22,9,24,0,0,7); ctx.fill(); ctx.restore(); }
+  if (A.dim>0){ ctx.fillStyle=`rgba(20,16,40,${A.dim})`; ctx.fillRect(0,0,W,H); }
+}
+
+// procedural cozy creature; mood drives eyes & mouth, gentle idle bob/blink
+let blink = 0, blinkT = 0;
+function drawCreature(cx, cy, ts){
+  const sp = SPECIES[S.species];
+  const m = mood();
+  const breathe = Math.sin(ts*0.0021)*4;
+  const sleepy = m.key==='sleep';
+  const bob = sleepy ? Math.sin(ts*0.0012)*2 : breathe;
+  const R = Math.min(W,H)*0.20;
+  const y = cy + bob;
+
+  // shadow
+  ctx.fillStyle='rgba(80,60,40,.16)';
+  ctx.beginPath(); ctx.ellipse(cx, cy+R*0.95, R*0.85, R*0.28, 0,0,7); ctx.fill();
+
+  // ears (behind body)
+  drawEars(cx, y, R, sp);
+
+  // body (squashed round)
+  ctx.fillStyle = sp.body;
+  ctx.beginPath(); ctx.ellipse(cx, y, R*1.02, R*0.92, 0, 0, 7); ctx.fill();
+  // belly
+  ctx.fillStyle = sp.belly;
+  ctx.beginPath(); ctx.ellipse(cx, y+R*0.18, R*0.6, R*0.5, 0, 0, 7); ctx.fill();
+  // tiny feet
+  ctx.fillStyle = sp.body;
+  ctx.beginPath(); ctx.ellipse(cx-R*0.42, y+R*0.82, R*0.22, R*0.16, 0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+R*0.42, y+R*0.82, R*0.22, R*0.16, 0,0,7); ctx.fill();
+
+  // face
+  const ey = y - R*0.08, eo = R*0.34;
+  // blink timer
+  blinkT -= 16; if (blinkT<0){ blink=1; blinkT = 1800+Math.random()*2600; }
+  if (blink>0) blink = Math.max(0, blink-0.12);
+  const closed = sleepy || (m.key==='joy'? false : blink>0.5);
+
+  ctx.fillStyle = '#4a3b30';
+  ctx.strokeStyle = '#4a3b30'; ctx.lineWidth = R*0.07; ctx.lineCap='round';
+  for(const sgn of [-1,1]){
+    const ex = cx + sgn*eo;
+    if (closed || sleepy){
+      ctx.beginPath(); ctx.arc(ex, ey, R*0.16, 0.15*Math.PI, 0.85*Math.PI); ctx.stroke();
+    } else if (m.key==='joy'){
+      // happy upward arcs ^_^
+      ctx.beginPath(); ctx.arc(ex, ey+R*0.05, R*0.17, 1.15*Math.PI, 1.85*Math.PI); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(ex, ey, R*0.11, 0, 7); ctx.fill();
+      // sparkle
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ex-R*0.04, ey-R*0.04, R*0.035,0,7); ctx.fill();
+      ctx.fillStyle='#4a3b30';
+    }
+  }
+  // cheeks
+  ctx.fillStyle = sp.cheek; ctx.globalAlpha=0.7;
+  ctx.beginPath(); ctx.arc(cx-eo-R*0.06, ey+R*0.2, R*0.12,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+eo+R*0.06, ey+R*0.2, R*0.12,0,7); ctx.fill();
+  ctx.globalAlpha=1;
+
+  // mouth by mood
+  ctx.strokeStyle='#7a4a44'; ctx.lineWidth=R*0.05;
+  const my = ey + R*0.34;
+  ctx.beginPath();
+  if (m.key==='joy'||m.key==='happy'){ ctx.arc(cx, my-R*0.06, R*0.16, 0.15*Math.PI, 0.85*Math.PI); }
+  else if (m.key==='sad'||m.key==='tired'){ ctx.arc(cx, my+R*0.14, R*0.14, 1.2*Math.PI, 1.8*Math.PI); }
+  else if (m.key==='hungry'){ ctx.ellipse(cx, my, R*0.07, R*0.09, 0,0,7); }
+  else { ctx.moveTo(cx-R*0.08,my); ctx.lineTo(cx+R*0.08,my); }
+  ctx.stroke();
+}
+
+function drawEars(cx, y, R, sp){
+  ctx.fillStyle = sp.body;
+  if (sp.ear==='leaf'){
+    for(const sgn of [-1,1]){ ctx.save(); ctx.translate(cx+sgn*R*0.5, y-R*0.75); ctx.rotate(sgn*0.5);
+      ctx.fillStyle='#7fae62'; ctx.beginPath(); ctx.ellipse(0,0,R*0.18,R*0.42,0,0,7); ctx.fill();
+      ctx.strokeStyle='#6b9a52'; ctx.lineWidth=R*0.03; ctx.beginPath(); ctx.moveTo(0,R*0.3); ctx.lineTo(0,-R*0.3); ctx.stroke();
+      ctx.restore(); }
+  } else if (sp.ear==='cap'){
+    ctx.fillStyle='#c98fd8';
+    ctx.beginPath(); ctx.ellipse(cx, y-R*0.78, R*0.78, R*0.4, 0, Math.PI, 0); ctx.fill();
+    ctx.fillStyle='#f2e3f6';
+    for(const dx of [-0.4,0,0.4]){ ctx.beginPath(); ctx.arc(cx+dx*R, y-R*0.85, R*0.08,0,7); ctx.fill(); }
+  } else { // tuft (owlish)
+    for(const sgn of [-1,1]){ ctx.fillStyle=sp.body;
+      ctx.beginPath(); ctx.moveTo(cx+sgn*R*0.55,y-R*0.6);
+      ctx.lineTo(cx+sgn*R*0.78,y-R*1.05); ctx.lineTo(cx+sgn*R*0.32,y-R*0.78); ctx.closePath(); ctx.fill(); }
+  }
+}
+
+function drawZ(cx, cy, ts){
+  if (!S.asleep) return;
+  ctx.fillStyle='#ffffffcc'; ctx.textAlign='left';
+  for(let i=0;i<3;i++){
+    const p = ((ts*0.0006)+i*0.33)%1;
+    ctx.globalAlpha = 1-p; ctx.font = `${14+i*8}px serif`;
+    ctx.fillText('Z', cx+ Math.min(W,H)*0.2 + p*18, cy - Math.min(W,H)*0.16 - p*46);
+  }
+  ctx.globalAlpha=1;
+}
+
+// tap the pet to cuddle
+cv.addEventListener('pointerdown', e=>{
+  if (!S || !S.adopted) return;
+  if (S.asleep){ toast('shhh… they are sleeping 💤'); return; }
+  const r = cv.getBoundingClientRect();
+  const x = e.clientX-r.left, y = e.clientY-r.top;
+  S.happy = clamp(S.happy + 3);
+  spawnHearts(3, x, y);
+  refresh(); save();
+});
+
+// ===================== UI WIRING =====================
+function refresh(){
+  applyDecay();
+  $('coinval').textContent = Math.floor(S.coins);
+  $('petname').textContent = S.name || 'Mossling';
+  $('bFull').style.width   = S.full+'%';
+  $('bHappy').style.width  = S.happy+'%';
+  $('bEnergy').style.width = S.energy+'%';
+  $('moodtag').textContent = mood().tag;
+  $('tSleep').querySelector('.l').textContent = S.asleep ? 'Wake' : 'Sleep';
+  $('tSleep').querySelector('.e').textContent = S.asleep ? '☀️' : '💤';
+}
+
+let toastT;
+function toast(msg){
+  const el=$('toast'); el.textContent=msg; el.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'),1700);
+}
+
+// ---- adopt flow ----
+function buildAdopt(){
+  const row = $('speciesRow'); row.innerHTML='';
+  let chosen=null;
+  for(const [id,sp] of Object.entries(SPECIES)){
+    const b=document.createElement('button'); b.className='pick';
+    b.innerHTML=`<div class="pe">${sp.ear==='leaf'?'🌱':sp.ear==='cap'?'🍄':'🦉'}</div>
+      <div class="pn">${sp.name}</div><div class="pd">${sp.desc}</div>`;
+    b.onclick=()=>{ chosen=id; [...row.children].forEach(c=>c.classList.remove('sel'));
+      b.classList.add('sel'); checkAdopt(); };
+    row.appendChild(b);
+  }
+  const nameIn=$('nameIn');
+  function checkAdopt(){ $('adoptBtn').disabled = !(chosen && nameIn.value.trim()); }
+  nameIn.oninput = checkAdopt;
+  $('adoptBtn').onclick=()=>{
+    S = freshState(); S.adopted=true; S.species=chosen||'pip';
+    S.name = nameIn.value.trim().slice(0,12) || SPECIES[S.species].name;
+    S.lastTs = now(); S.lastVisitDay = dayStr(now()); S.streak = 1; save();
+    $('ovAdopt').classList.remove('show');
+    refresh(); toast(`Welcome home, ${S.name}! 💚`);
+  };
+  $('ovAdopt').classList.add('show');
+}
+
+// ---- feed flow ----
+function openFeed(){
+  if (S.asleep){ toast('they are asleep — wake them first'); return; }
+  const list=$('foodList'); list.innerHTML='';
+  $('feedSub').textContent = S.full>=98 ? `${S.name} is completely full!` : 'A little something to fill the tummy.';
+  for(const f of FOODS){
+    const b=document.createElement('button'); b.className='food';
+    const afford = S.coins>=f.cost && S.full<100;
+    b.disabled=!afford;
+    b.innerHTML=`<span class="fe">${f.e}</span><span class="fmeta"><div class="fn">${f.n}</div>
+      <div class="fsub">${f.sub}</div></span><span class="cost"><span class="c"></span>${f.cost}</span>`;
+    b.onclick=()=>feed(f);
+    list.appendChild(b);
+  }
+  $('ovFeed').classList.add('show');
+}
+function feed(f){
+  if (S.coins < f.cost) return;
+  S.coins -= f.cost;
+  S.full = clamp(S.full + f.fill);
+  S.happy = clamp(S.happy + f.joy);
+  spawnHearts(2, W/2, H*0.5);
+  save(); refresh();
+  toast(`${S.name} nibbles the ${f.n} 😋`);
+  if (S.full>=100 || S.coins<3) $('ovFeed').classList.remove('show'); else openFeed();
+}
+
+// ---- sleep toggle ----
+function toggleSleep(){
+  if (!S.asleep && S.energy>=100){ toast(`${S.name} is wide awake!`); return; }
+  S.asleep = !S.asleep; S.lastTs = now(); save(); refresh();
+  toast(S.asleep ? `Goodnight, ${S.name} 💤` : `Good morning! ☀️`);
+}
+
+$('tFeed').onclick  = openFeed;
+$('tSleep').onclick = toggleSleep;
+$('tShop').onclick  = pickGame;
+$('tPlay').onclick  = pickGame;
+$('feedClose').onclick = ()=>$('ovFeed').classList.remove('show');
+
+// ===================== MINI-GAMES =====================
+// Two cozy thumb-games on a shared overlay/canvas. Firefly Catch is the steady
+// coin grind; Kick-a-Ball is about playing *with* the pet — flick the ball and
+// the Mossling chases it down to bop it back (entertain your pet).
+const mg = $('mg'), mgc = $('mgc'), mctx = mgc.getContext('2d');
+let mgMode=null, mgState=null;
+
+function pickGame(){
+  if (S.asleep){ toast('wake them up to play together'); return; }
+  if (S.energy < 12){ toast(`${S.name} is too sleepy to play`); return; }
+  $('ovGames').classList.add('show');
+}
+$('gFirefly').onclick   = ()=>{ $('ovGames').classList.remove('show'); startFirefly(); };
+$('gKick').onclick      = ()=>{ $('ovGames').classList.remove('show'); startKick(); };
+$('gamesClose').onclick = ()=>$('ovGames').classList.remove('show');
+
+function mgResize(){ const r=mg.getBoundingClientRect(); mgc.width=r.width*DPR; mgc.height=r.height*DPR;
+  mctx.setTransform(DPR,0,0,DPR,0,0); if(mgState){ mgState.w=r.width; mgState.h=r.height; } }
+function openMG(){ mg.classList.add('show'); $('mgmsg').style.display='flex'; mgResize(); }
+function closeGame(){ mg.classList.remove('show'); mgState=null; mgMode=null; refresh(); }
+
+// shared canvas input → dispatch to the active game
+mgc.addEventListener('pointerdown', e=>{
+  if (!mgState || !mgState.running) return;
+  const r=mgc.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top;
+  if (mgMode==='firefly') fireflyTap(x,y);
+  else if (mgMode==='kick') kickTap(x,y);
+});
+
+// ---------- Firefly Catch ----------
+function startFirefly(){
+  mgMode='firefly';
+  const r=mg.getBoundingClientRect();
+  mgState = { flies:[], score:0, time:20, last:performance.now(), spawn:0, running:false, w:r.width, h:r.height };
+  openMG();
+  $('mgmsg').innerHTML = `<h2>🎣 Firefly Catch</h2>
+    <p>Tap the fireflies before they drift away. Each one is a coin — and ${S.name} loves the company.</p>
+    <button class="btn" id="mgStart">Start</button><button class="btn ghost" id="mgQuit">Maybe later</button>`;
+  $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); requestAnimationFrame(fireflyFrame); };
+  $('mgQuit').onclick=closeGame;
+}
+function fireflyTap(x,y){
+  for(let i=mgState.flies.length-1;i>=0;i--){ const f=mgState.flies[i];
+    if (Math.hypot(f.x-x,f.y-y) < f.r+16){ mgState.flies.splice(i,1); mgState.score++;
+      mctx.fillStyle='#fff'; mctx.font='20px serif'; mctx.textAlign='center'; mctx.fillText('✨',f.x,f.y); break; } }
+}
+function fireflyFrame(ts){
+  if(!mgState||!mgState.running) return;
+  const dt=Math.min(50,ts-mgState.last); mgState.last=ts;
+  const w=mgState.w, h=mgState.h;
+  mgState.time-=dt/1000;
+  $('mgTime').textContent=Math.max(0,Math.ceil(mgState.time)); $('mgScore').textContent=mgState.score;
+  mgState.spawn-=dt;
+  if(mgState.spawn<=0){ mgState.spawn=420+Math.random()*380;
+    mgState.flies.push({x:30+Math.random()*(w-60),y:h+20,vy:-(0.04+Math.random()*0.045),vx:(Math.random()-0.5)*0.03,p:Math.random()*6.28,r:20}); }
+  nightBG(w,h,ts);
+  for(let i=mgState.flies.length-1;i>=0;i--){ const f=mgState.flies[i]; f.p+=0.08; f.y+=f.vy*dt; f.x+=Math.sin(f.p)*0.5+f.vx*dt;
+    if(f.y<-30){ mgState.flies.splice(i,1); continue; }
+    const glow=0.6+0.4*Math.sin(f.p);
+    mctx.globalAlpha=glow*0.5; mctx.fillStyle='#fff6a8'; mctx.beginPath(); mctx.arc(f.x,f.y,f.r*1.7,0,7); mctx.fill();
+    mctx.globalAlpha=1; mctx.fillStyle='#fff2c2'; mctx.beginPath(); mctx.arc(f.x,f.y,f.r*0.5,0,7); mctx.fill();
+    mctx.fillStyle='#e8c84a'; mctx.beginPath(); mctx.arc(f.x,f.y,f.r*0.28,0,7); mctx.fill(); }
+  if(mgState.time<=0){ endGame('firefly'); return; }
+  requestAnimationFrame(fireflyFrame);
+}
+
+// ---------- Kick-a-Ball ----------
+function startKick(){
+  mgMode='kick';
+  const r=mg.getBoundingClientRect();
+  mgState={ score:0, rally:0, best:0, time:25, last:performance.now(), running:false, w:r.width, h:r.height,
+    ball:null, pet:{x:r.width*0.3, kickCd:0}, pops:[] };
+  resetBall();
+  openMG();
+  $('mgmsg').innerHTML=`<h2>⚽ Kick-a-Ball</h2>
+    <p>Flick the ball to keep it bouncing — ${S.name} will chase and bop it back. Every kick is a coin and a happy little heart.</p>
+    <button class="btn" id="mgStart">Start</button><button class="btn ghost" id="mgQuit">Maybe later</button>`;
+  $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); requestAnimationFrame(kickFrame); };
+  $('mgQuit').onclick=closeGame;
+}
+function resetBall(){ const s=mgState; s.ball={ x:s.w*0.5, y:s.h*0.35, vx:0, vy:0, r:Math.min(s.w,s.h)*0.06 }; }
+function kickTap(x,y){
+  const b=mgState.ball, d=Math.hypot(b.x-x,b.y-y);
+  if(d < b.r+36){
+    const ang=Math.atan2(b.y-y, b.x-x);            // direction away from finger
+    b.vx = Math.cos(ang)*0.38 + (Math.random()-0.5)*0.1;
+    b.vy = -Math.abs(Math.sin(ang)*0.42) - 0.42;   // always lofts upward
+    mgState.score++; mgState.rally++; mgState.best=Math.max(mgState.best,mgState.rally);
+    mgState.pops.push({x:b.x,y:b.y-b.r,life:1,txt:'💗'});
+  }
+}
+function kickFrame(ts){
+  if(!mgState||!mgState.running) return;
+  const dt=Math.min(50,ts-mgState.last); mgState.last=ts;
+  const s=mgState, w=s.w, h=s.h, floor=h*0.84;
+  s.time-=dt/1000;
+  $('mgTime').textContent=Math.max(0,Math.ceil(s.time)); $('mgScore').textContent=s.score;
+
+  // ball physics
+  const b=s.ball, g=0.0012;
+  b.vy += g*dt; b.x += b.vx*dt; b.y += b.vy*dt;
+  if(b.x < b.r){ b.x=b.r; b.vx=Math.abs(b.vx)*0.8; }
+  if(b.x > w-b.r){ b.x=w-b.r; b.vx=-Math.abs(b.vx)*0.8; }
+  if(b.y < b.r){ b.y=b.r; b.vy=Math.abs(b.vy)*0.6; }
+  if(b.y > floor-b.r){ b.y=floor-b.r;
+    if(b.vy>0.05){ b.vy=-b.vy*0.55; b.vx*=0.9; } else { b.vy=0; b.vx*=0.85; s.rally=0; } }
+
+  // pet chases the ball and bops it up when close (entertains itself)
+  const p=s.pet; p.kickCd-=dt;
+  p.x += Math.sign(b.x-p.x)*Math.min(Math.abs(b.x-p.x), 0.32*dt);
+  p.x = Math.max(w*0.1, Math.min(w*0.9, p.x));
+  const petTop = floor - Math.min(w,h)*0.24;
+  if(p.kickCd<=0 && Math.abs(b.x-p.x) < b.r+Math.min(w,h)*0.13 && b.y > petTop){
+    b.vy = -0.5 - Math.random()*0.15;
+    b.vx = (w*0.5-b.x)*0.0009 + (Math.random()-0.5)*0.15;
+    p.kickCd=350; s.pops.push({x:p.x,y:petTop,life:1,txt:'✨'});
+  }
+
+  // draw
+  kickBG(w,h,floor);
+  const sh=1-Math.min(1,(floor-b.r-b.y)/(h*0.4));
+  mctx.fillStyle='rgba(0,0,0,.18)'; mctx.beginPath(); mctx.ellipse(b.x,floor-4,b.r*(0.6+0.5*sh),b.r*0.25,0,0,7); mctx.fill();
+  drawKickPet(p.x, floor, Math.min(w,h)*0.17, ts);
+  drawBall(b);
+  for(let i=s.pops.length-1;i>=0;i--){ const o=s.pops[i]; o.y-=0.04*dt; o.life-=dt*0.0016;
+    if(o.life<=0){ s.pops.splice(i,1); continue; }
+    mctx.globalAlpha=o.life; mctx.font='22px serif'; mctx.textAlign='center'; mctx.fillText(o.txt,o.x,o.y); mctx.globalAlpha=1; }
+
+  if(s.time<=0){ endGame('kick'); return; }
+  requestAnimationFrame(kickFrame);
+}
+function drawBall(b){
+  mctx.fillStyle='#fff'; mctx.beginPath(); mctx.arc(b.x,b.y,b.r,0,7); mctx.fill();
+  mctx.strokeStyle='#d76a6a'; mctx.lineWidth=Math.max(2,b.r*0.16);
+  mctx.beginPath(); mctx.arc(b.x,b.y,b.r*0.6,0,7); mctx.stroke();
+  mctx.fillStyle='#d76a6a'; mctx.beginPath(); mctx.arc(b.x,b.y,b.r*0.22,0,7); mctx.fill();
+}
+function drawKickPet(x, floor, R, ts){
+  const sp=SPECIES[S.species], y=floor-R*0.85 + Math.sin(ts*0.006)*2;
+  mctx.fillStyle='rgba(0,0,0,.15)'; mctx.beginPath(); mctx.ellipse(x,floor-2,R*0.8,R*0.22,0,0,7); mctx.fill();
+  mctx.fillStyle=sp.body; mctx.beginPath(); mctx.ellipse(x,y,R*0.95,R*0.85,0,0,7); mctx.fill();
+  mctx.fillStyle=sp.belly; mctx.beginPath(); mctx.ellipse(x,y+R*0.15,R*0.55,R*0.45,0,0,7); mctx.fill();
+  mctx.strokeStyle='#4a3b30'; mctx.lineWidth=R*0.08; mctx.lineCap='round';
+  for(const sgn of[-1,1]){ mctx.beginPath(); mctx.arc(x+sgn*R*0.32,y-R*0.05,R*0.15,1.15*Math.PI,1.85*Math.PI); mctx.stroke(); }
+  mctx.strokeStyle='#7a4a44'; mctx.lineWidth=R*0.06;
+  mctx.beginPath(); mctx.arc(x,y+R*0.18,R*0.14,0.15*Math.PI,0.85*Math.PI); mctx.stroke();
+}
+function nightBG(w,h,ts){
+  const g=mctx.createLinearGradient(0,0,0,h); g.addColorStop(0,'#211d38'); g.addColorStop(1,'#3a3358');
+  mctx.fillStyle=g; mctx.fillRect(0,0,w,h);
+  for(const s of stars){ mctx.globalAlpha=.3+.3*Math.sin(s.p+ts*0.001); mctx.fillStyle='#fff'; mctx.fillRect(s.x*w,s.y*h*0.7,2,2); }
+  mctx.globalAlpha=1;
+}
+function kickBG(w,h,floor){
+  const g=mctx.createLinearGradient(0,0,0,h); g.addColorStop(0,'#bfe6f2'); g.addColorStop(1,'#eafbe7');
+  mctx.fillStyle=g; mctx.fillRect(0,0,w,h);
+  mctx.fillStyle='#ffe9a8'; mctx.beginPath(); mctx.arc(w*0.82,h*0.15,26,0,7); mctx.fill();
+  mctx.fillStyle='#9fd17f'; mctx.fillRect(0,floor,w,h-floor);
+  mctx.fillStyle='#8cc46c'; mctx.fillRect(0,floor,w,4);
+}
+function endGame(mode){
+  mgState.running=false;
+  const earned=mgState.score;
+  S.coins += earned;
+  if(mode==='kick'){ S.happy=clamp(S.happy+Math.min(28,earned*2)); S.energy=clamp(S.energy-10); }
+  else { S.happy=clamp(S.happy+Math.min(20,earned*1.5)); S.energy=clamp(S.energy-8); }
+  save(); refresh();
+  $('mgmsg').style.display='flex';
+  const tail = mode==='kick'
+    ? `${S.name} chased every kick — ${earned>0?`+${earned} coins and a very happy heart.`:'still a lovely romp!'}`
+    : `${S.name} had a lovely time. ${earned>0?`+${earned} coins, and a happier heart.`:'Better luck next time!'}`;
+  $('mgmsg').innerHTML=`<h2>${mode==='kick'?'⚽':'🎣'} ${earned} 🪙</h2><p>${tail}</p>
+    <button class="btn" id="mgAgain">Play again</button><button class="btn ghost" id="mgDone">Done</button>`;
+  $('mgAgain').onclick = mode==='kick' ? startKick : startFirefly;
+  $('mgDone').onclick  = closeGame;
+}
+
+// ===================== DAILY GREETING + BONUS =====================
+// First open of each new local day, the Mossling greets you and offers a small
+// gift. A streak grows the bonus; a missed day just resets it — no guilt, no
+// penalty (cozy promise). Greeting is time-of-day aware and notices the pet's mood.
+function dayStr(ts){ const d=new Date(ts); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
+function greetWord(){ const h=new Date().getHours();
+  return h<6?'Hello, night owl':h<12?'Good morning':h<18?'Good afternoon':'Good evening'; }
+
+// what (if anything) is owed today — pure, doesn't mutate state until claimed
+function pendingDaily(){
+  if (!S || !S.adopted) return null;
+  const today = dayStr(now());
+  if (S.lastVisitDay === today) return null;            // already greeted today
+  const yesterday = dayStr(now() - 864e5);
+  const streak = (S.lastVisitDay === yesterday) ? (S.streak||0) + 1 : 1;
+  const bonus = 5 + Math.min(streak, 7) * 2;            // 7 → 19 coins, capped at a 7-day streak
+  return { today, streak, bonus };
+}
+function anyOverlayOpen(){ return document.querySelector('.ov.show') || mg.classList.contains('show'); }
+
+function checkDaily(){
+  if (anyOverlayOpen()) return;                         // don't interrupt adopt/feed/games
+  const d = pendingDaily();
+  if (!d) return;
+  $('dailyTitle').textContent = `${greetWord()}!`;
+  let sub = d.streak > 1 ? `${S.name} kept the windowsill warm for you.`
+                         : `${S.name} is so happy to see you again!`;
+  if (S.full < 25)        sub += ` Looks a little hungry, though.`;
+  else if (S.energy < 25) sub += ` Looks a bit sleepy, too.`;
+  $('dailySub').textContent = sub;
+  $('dailyStreak').textContent = d.streak > 1 ? `🔥 ${d.streak}-day streak · +${d.bonus} coins` : `A welcome gift · +${d.bonus} coins`;
+  $('dailyClaim').onclick = ()=>claimDaily(d);
+  $('ovDaily').classList.add('show');
+}
+function claimDaily(d){
+  S.coins += d.bonus;
+  S.happy = clamp(S.happy + 10);
+  S.streak = d.streak;
+  S.lastVisitDay = d.today;
+  save(); refresh();
+  $('ovDaily').classList.remove('show');
+  spawnHearts(4, W/2, H*0.5);
+  toast(`+${d.bonus} coins · ${S.name} feels loved 💚`);
+}
+
+// ===================== BOOT =====================
+function boot(){
+  resize();
+  S = load();
+  if (!S){ S = freshState(); buildAdopt(); }
+  else { refresh(); checkDaily(); }
+  requestAnimationFrame(frame);
+  // tick the world every few seconds while open, and on refocus
+  setInterval(()=>{ if (S && S.adopted){ refresh(); save(); } }, 5000);
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden && S && S.adopted){ refresh(); save(); checkDaily(); }   // catch midnight crossings
+  });
+}
+boot();
+</script>
+</body>
+</html>
