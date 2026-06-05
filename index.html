@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#f3e7d3">
-<title>Mossling</title>
+<title>Mosslings</title>
 <!-- MOSSLING — cozy virtual pet, mobile-first prototype (v0.1). Neopets DNA:
      adopt a little creature, keep it fed/happy/rested, earn coins in a mini-game,
      spend them on snacks. Real-time needs decay; the pet never dies — it just gets
@@ -122,7 +122,7 @@
 <div id="app">
   <div id="hud">
     <div class="hudtop">
-      <div id="petname">Mossling</div>
+      <div id="petname">Mosslings</div>
       <div id="coins"><span class="c"></span><span id="coinval">0</span></div>
     </div>
     <div class="bars">
@@ -481,7 +481,7 @@ cv.addEventListener('pointerdown', e=>{
 function refresh(){
   applyDecay();
   $('coinval').textContent = Math.floor(S.coins);
-  $('petname').textContent = S.name || 'Mossling';
+  $('petname').textContent = S.name || 'Mosslings';
   $('bFull').style.width   = S.full+'%';
   $('bHappy').style.width  = S.happy+'%';
   $('bEnergy').style.width = S.energy+'%';
@@ -577,8 +577,10 @@ $('gFirefly').onclick   = ()=>{ $('ovGames').classList.remove('show'); startFire
 $('gKick').onclick      = ()=>{ $('ovGames').classList.remove('show'); startKick(); };
 $('gamesClose').onclick = ()=>$('ovGames').classList.remove('show');
 
-function mgResize(){ const r=mg.getBoundingClientRect(); mgc.width=r.width*DPR; mgc.height=r.height*DPR;
-  mctx.setTransform(DPR,0,0,DPR,0,0); if(mgState){ mgState.w=r.width; mgState.h=r.height; } }
+function mgResize(){ const r=mg.getBoundingClientRect();
+  const w=r.width||window.innerWidth, h=r.height||window.innerHeight;   // never 0 (e.g. mid-show)
+  mgc.width=w*DPR; mgc.height=h*DPR;
+  mctx.setTransform(DPR,0,0,DPR,0,0); if(mgState){ mgState.w=w; mgState.h=h; } }
 function openMG(){ mg.classList.add('show'); $('mgmsg').style.display='flex'; mgResize(); }
 function closeGame(){ mg.classList.remove('show'); mgState=null; mgMode=null; refresh(); }
 
@@ -593,9 +595,9 @@ mgc.addEventListener('pointerdown', e=>{
 // ---------- Firefly Catch ----------
 function startFirefly(){
   mgMode='firefly';
-  const r=mg.getBoundingClientRect();
-  mgState = { flies:[], score:0, time:20, last:performance.now(), spawn:0, running:false, w:r.width, h:r.height };
-  openMG();
+  mgState = { flies:[], score:0, time:20, last:performance.now(), spawn:0, running:false, w:0, h:0 };
+  openMG();                                  // show first → mgResize fills real w/h
+  $('mgScore').textContent=0; $('mgTime').textContent=20;
   $('mgmsg').innerHTML = `<h2>🎣 Firefly Catch</h2>
     <p>Tap the fireflies before they drift away. Each one is a coin — and ${S.name} loves the company.</p>
     <button class="btn" id="mgStart">Start</button><button class="btn ghost" id="mgQuit">Maybe later</button>`;
@@ -630,11 +632,12 @@ function fireflyFrame(ts){
 // ---------- Kick-a-Ball ----------
 function startKick(){
   mgMode='kick';
-  const r=mg.getBoundingClientRect();
-  mgState={ score:0, rally:0, best:0, time:25, last:performance.now(), running:false, w:r.width, h:r.height,
-    ball:null, pet:{x:r.width*0.3, kickCd:0}, pops:[] };
-  resetBall();
-  openMG();
+  mgState={ score:0, rally:0, best:0, time:25, last:performance.now(), running:false, w:0, h:0,
+    ball:null, pet:{x:0, kickCd:0}, pops:[] };
+  openMG();                                  // show first so the canvas has real dimensions
+  mgState.pet.x = mgState.w*0.3;             // (mgResize inside openMG filled w/h)
+  resetBall();                               // size + place the ball against real dimensions
+  $('mgScore').textContent=0; $('mgTime').textContent=25;
   $('mgmsg').innerHTML=`<h2>⚽ Kick-a-Ball</h2>
     <p>Flick the ball to keep it bouncing — ${S.name} will chase and bop it back. Every kick is a coin and a happy little heart.</p>
     <button class="btn" id="mgStart">Start</button><button class="btn ghost" id="mgQuit">Maybe later</button>`;
