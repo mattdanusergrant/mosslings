@@ -29,7 +29,9 @@
   /* ---- top HUD ---- */
   #hud{padding:max(10px,env(safe-area-inset-top)) 14px 8px;flex:0 0 auto;}
   .hudtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-  #petname{font-size:19px;font-weight:700;letter-spacing:.3px;}
+  #petname{font-size:19px;font-weight:700;letter-spacing:.3px;cursor:pointer;display:flex;align-items:center;gap:6px;}
+  #petname::after{content:'›';font-size:18px;color:var(--ink-soft);font-weight:400;}
+  #petname:active{transform:translateY(1px);}
   #coins{display:flex;align-items:center;gap:6px;background:var(--card);
     padding:5px 12px;border-radius:20px;box-shadow:var(--shadow);font-weight:700;font-size:15px;}
   #coins .c{width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#f6d878,var(--coin));
@@ -72,6 +74,7 @@
   .ov.show{display:flex;}
   .sheet{background:var(--card);border-radius:24px;box-shadow:0 14px 40px rgba(70,50,30,.35);
     width:100%;max-width:380px;padding:22px;text-align:center;animation:pop .25s ease;}
+  .sheet.wide{max-width:440px;}
   @keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
   .sheet h2{margin:0 0 4px;font-size:21px;}
   .sheet p{margin:0 0 16px;color:var(--ink-soft);font-size:14px;line-height:1.45;}
@@ -104,6 +107,48 @@
   .food .cost .c{width:14px;height:14px;border-radius:50%;
     background:radial-gradient(circle at 35% 30%,#f6d878,var(--coin));}
   .food:disabled{filter:grayscale(.5) opacity(.5);}
+
+  /* ---- world map ---- */
+  .map{position:relative;height:300px;border-radius:18px;margin:6px 0 18px;overflow:hidden;
+    background:radial-gradient(ellipse at 30% 25%, #f7d8a8 0%, #d8e6c1 35%, #c9d9a8 65%, #a8c6a0 100%);
+    box-shadow:inset 0 2px 10px rgba(70,50,30,.18);}
+  .map::before{content:'';position:absolute;inset:0;
+    background-image:radial-gradient(circle at 50% 65%, #b8d4dc 0%, transparent 18%),
+                     radial-gradient(circle at 12% 80%, #8fb878 0%, transparent 15%),
+                     radial-gradient(circle at 88% 80%, #8fb878 0%, transparent 14%);}
+  .loc{position:absolute;background:#fffaf1;border:2px solid #e3d2b6;border-radius:50%;
+    width:64px;height:64px;box-shadow:var(--shadow);cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-family:inherit;color:var(--ink);padding:0;transition:transform .08s;z-index:2;}
+  .loc:active{transform:scale(.92);}
+  .loc:disabled{filter:grayscale(.55) opacity(.5);cursor:default;}
+  .loc .le{font-size:24px;line-height:1;}
+  .loc .ln{font-size:10px;font-weight:700;margin-top:1px;letter-spacing:.2px;}
+  .lcd{position:absolute;left:50%;bottom:-16px;transform:translateX(-50%);
+    font-size:10px;color:var(--ink-soft);font-weight:600;white-space:nowrap;}
+
+  /* ---- pet profile ---- */
+  .profile-card{background:var(--btn);border-radius:18px;padding:14px;margin:6px 0 14px;
+    text-align:left;display:flex;align-items:center;gap:14px;}
+  .profile-card .pemoji{font-size:46px;line-height:1;}
+  .profile-card .pinfo{flex:1;}
+  .profile-card .pname{font-weight:700;font-size:18px;color:var(--ink);}
+  .profile-card .ptitle{font-size:13px;color:var(--ink-soft);font-weight:600;margin-top:2px;}
+  .xpbar{height:8px;background:#0000000f;border-radius:5px;overflow:hidden;margin-top:9px;}
+  .xpbar .xfill{height:100%;background:linear-gradient(var(--happy),#cf6386);border-radius:5px;transition:width .35s;}
+  .xptag{font-size:11px;color:var(--ink-soft);font-weight:600;margin-top:4px;text-align:right;}
+  .rosterh{margin:4px 0 8px;font-size:12px;color:var(--ink-soft);font-weight:700;
+    text-transform:uppercase;letter-spacing:.6px;text-align:left;}
+  .roster{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-height:180px;overflow-y:auto;}
+  .rosterItem{display:flex;align-items:center;gap:10px;background:var(--btn);border:none;
+    border-radius:14px;padding:8px 12px;cursor:pointer;font-family:inherit;color:var(--ink);text-align:left;
+    transition:transform .08s,background .1s;}
+  .rosterItem:active{transform:scale(.98);background:var(--btn-press);}
+  .rosterItem .re{font-size:22px;}
+  .rosterItem .rn{flex:1;font-weight:700;font-size:14px;}
+  .rosterItem .rt{font-size:11px;color:var(--ink-soft);}
+  .rosterEmpty{font-size:13px;color:var(--ink-soft);text-align:center;padding:8px 4px 4px;}
+  .profile-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
 
   /* mini-game */
   #mg{position:absolute;inset:0;display:none;z-index:30;background:#2a2440;}
@@ -148,7 +193,7 @@
   <div id="bar">
     <button class="tool" id="tFeed"><span class="e">🍓</span><span class="l">Feed</span></button>
     <button class="tool" id="tPlay"><span class="e">🎣</span><span class="l">Play</span></button>
-    <button class="tool" id="tShop"><span class="e">🪙</span><span class="l">Earn</span></button>
+    <button class="tool" id="tExplore"><span class="e">🗺️</span><span class="l">Explore</span></button>
   </div>
 
   <!-- adopt overlay -->
@@ -198,6 +243,30 @@
     </div>
   </div>
 
+  <!-- explore world map -->
+  <div class="ov" id="ovExplore">
+    <div class="sheet wide">
+      <h2>Where to next?</h2>
+      <p>Tap a place to visit. Each one rests a while after you go.</p>
+      <div class="map" id="mapView"></div>
+      <button class="btn ghost" id="exploreClose">Close</button>
+    </div>
+  </div>
+
+  <!-- pet profile + roster -->
+  <div class="ov" id="ovProfile">
+    <div class="sheet wide">
+      <h2>Pet Profile</h2>
+      <div id="profCard" class="profile-card"></div>
+      <div class="rosterh">Other Mosslings</div>
+      <div id="rosterList" class="roster"></div>
+      <div class="profile-actions">
+        <button class="btn" id="adoptNewBtn">Adopt new Mossling</button>
+        <button class="btn ghost" id="profileClose">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- mini-game -->
   <div id="mg">
     <canvas id="mgc"></canvas>
@@ -215,7 +284,8 @@
 // while you're away (needs drift slowly toward calm-but-wistful, never zero-out
 // into death — this is a cozy game).
 
-const KEY = 'mossling.save.v1';
+const KEY = 'mossling.save.v2';
+const OLD_KEY = 'mossling.save.v1';
 const $ = id => document.getElementById(id);
 
 // ---- species: drawn procedurally, no art assets ----
@@ -239,21 +309,84 @@ const MAX_CATCHUP_H = 36;     // cap offline simulation so it never feels punish
 const TIRED_SLEEP_AT = 15;    // pet auto-naps when energy crosses this threshold
 const SLEEP_DECAY_MULT = 0.35;// hunger/happy decay much slower while asleep — sleep restores
 
-let S = null;        // game state
+// ===================== STATE SHAPE (v2) =====================
+// S = { pets: [...], currentId, coins, lastVisitDay, streak }
+// Each pet owns its own stats/lastTs/asleep/level/xp/lastVisits. Coins, the
+// daily streak, and lastVisitDay belong to the player (shared across pets).
+// `P` is the live reference to the current pet (refresh via refreshP()).
+let S = null;        // wrapper save object
+let P = null;        // current pet (alias into S.pets)
 let now = () => Date.now();
 
-// ---------- persistence ----------
+function newPetId(){ return 'p-' + Math.random().toString(36).slice(2, 8); }
+function freshPet(species, name){
+  species = species || 'pip';
+  return { id: newPetId(), name: name || SPECIES[species].name, species,
+    full:70, happy:70, energy:80, asleep:false,
+    lastTs: now(), born: now(),
+    xp: 0, level: 0, lastVisits: {} };
+}
+function freshSave(){
+  return { pets: [], currentId: null, coins: 8, lastVisitDay: '', streak: 0 };
+}
+function refreshP(){ P = (S && S.currentId) ? S.pets.find(p => p.id === S.currentId) || S.pets[0] || null : (S && S.pets[0]) || null; }
+function hasPet(){ return !!(S && S.pets && S.pets.length); }
+
+// ---------- persistence (with v1 → v2 migration) ----------
 function load(){
-  try { const r = JSON.parse(localStorage.getItem(KEY));
-    if (r && r.adopted){
-      if (r.streak === undefined) r.streak = 0;        // migrate pre-daily saves
-      if (r.lastVisitDay === undefined) r.lastVisitDay = '';
-      return r;
+  try {
+    const r = JSON.parse(localStorage.getItem(KEY));
+    if (r && Array.isArray(r.pets)) return r;
+  } catch(e){}
+  // v1 had a single adopted pet at the top level. Bring it forward.
+  try {
+    const old = JSON.parse(localStorage.getItem(OLD_KEY));
+    if (old && old.adopted){
+      const pet = { id:'p-legacy', name: old.name, species: old.species||'pip',
+        full: old.full, happy: old.happy, energy: old.energy, asleep: !!old.asleep,
+        lastTs: old.lastTs||now(), born: old.born||now(),
+        xp: 0, level: 0, lastVisits: {} };
+      return { pets:[pet], currentId: pet.id,
+        coins: old.coins||0, lastVisitDay: old.lastVisitDay||'', streak: old.streak||0 };
     }
   } catch(e){}
   return null;
 }
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
+
+// ---------- multi-pet roster ----------
+function switchPet(id){
+  if (!S) return;
+  if (P) P.lastTs = now();           // freeze decay on the pet we're leaving
+  S.currentId = id;
+  refreshP();
+  if (P) P.lastTs = now();           // and start the new one from now (no catch-up)
+  save();
+}
+function addPet(species, name){
+  if (!S) S = freshSave();
+  const pet = freshPet(species, name);
+  S.pets.push(pet);
+  switchPet(pet.id);
+  return pet;
+}
+
+// ---------- XP & levels (per pet) ----------
+// Cumulative XP threshold to reach level L+1 from L. Slow gentle ramp.
+function xpToNext(L){ return 25 + L*10; }
+const TITLES = ['Sprout 🌱','Sapling 🌿','Bud 🌸','Bloom 🌺','Heart 💚','Star ⭐','Spirit 🌟','Sage ✨','Legend ✨'];
+function titleOf(p){ return TITLES[Math.min(p.level||0, TITLES.length-1)]; }
+function gainXP(amt){
+  if (!P || !amt) return;
+  P.xp = (P.xp||0) + amt;
+  let leveled = false;
+  while (P.xp >= xpToNext(P.level||0)){
+    P.xp -= xpToNext(P.level||0);
+    P.level = (P.level||0) + 1;
+    leveled = true;
+  }
+  if (leveled){ sfx('daily'); toast(`${P.name} is now a ${titleOf(P)}!`); }
+}
 
 // ===================== SOUND (WebAudio, synthesized) =====================
 // Cozy procedural audio: no asset files. One AudioContext lazy-built on the
@@ -334,51 +467,46 @@ function stopAmbient(){
   SND.amb = null;
 }
 
-function freshState(){
-  return { adopted:false, name:'', species:'pip',
-    coins:8, full:70, happy:70, energy:80,
-    asleep:false, lastTs:now(), born:now(),
-    lastVisitDay:'', streak:0 };
-}
-
-// ---------- real-time needs decay ----------
+// ---------- real-time needs decay (current pet only) ----------
 // Simulated in segments split at the awake→asleep transition so an offline
 // stretch that drains the pet past TIRED_SLEEP_AT lands the next session on
-// a sleeping pet. No auto-wake — the pet sleeps until tapped (cozy: come home
-// to a sleeping Mossling instead of one that re-tired itself overnight).
+// a sleeping pet. No auto-wake — the pet sleeps until tapped. Non-current pets
+// don't decay (switchPet freezes their lastTs).
 function applyDecay(){
+  if (!P) return;
   const t = now();
-  let hLeft = (t - S.lastTs) / 3.6e6;
-  if (hLeft <= 0){ S.lastTs = t; return; }
+  let hLeft = (t - P.lastTs) / 3.6e6;
+  if (hLeft <= 0){ P.lastTs = t; return; }
   hLeft = Math.min(hLeft, MAX_CATCHUP_H);
   while (hLeft > 1e-6){
     let segH = hLeft;
-    if (!S.asleep && S.energy > TIRED_SLEEP_AT){            // schedule the nap onset
-      segH = Math.min(segH, (S.energy - TIRED_SLEEP_AT) / DECAY.energyAwake);
+    if (!P.asleep && P.energy > TIRED_SLEEP_AT){            // schedule the nap onset
+      segH = Math.min(segH, (P.energy - TIRED_SLEEP_AT) / DECAY.energyAwake);
     }
-    const eRate = S.asleep ? DECAY.energyAsleep : DECAY.energyAwake;
-    const m = S.asleep ? SLEEP_DECAY_MULT : 1;
-    S.full   = clamp(S.full   - DECAY.full  * segH * m);
-    S.happy  = clamp(S.happy  - DECAY.happy * segH * m);
-    S.energy = clamp(S.energy - eRate * segH);
-    if (S.full < 25 || S.energy < 25) S.happy = Math.max(S.happy - 4*segH*m, 18);
+    const eRate = P.asleep ? DECAY.energyAsleep : DECAY.energyAwake;
+    const m = P.asleep ? SLEEP_DECAY_MULT : 1;
+    P.full   = clamp(P.full   - DECAY.full  * segH * m);
+    P.happy  = clamp(P.happy  - DECAY.happy * segH * m);
+    P.energy = clamp(P.energy - eRate * segH);
+    if (P.full < 25 || P.energy < 25) P.happy = Math.max(P.happy - 4*segH*m, 18);
     hLeft -= segH;
-    if (!S.asleep && S.energy <= TIRED_SLEEP_AT + 0.01) S.asleep = true;
+    if (!P.asleep && P.energy <= TIRED_SLEEP_AT + 0.01) P.asleep = true;
   }
-  S.lastTs = t;
+  P.lastTs = t;
 }
 function clamp(v){ return Math.max(0, Math.min(100, v)); }
 
 // ---------- mood ----------
 function mood(){
-  if (S.asleep) return { key:'sleep', tag:`${S.name} is sleeping… tap to wake them ☀️` };
-  if (S.energy < 18) return { key:'tired', tag:`${S.name} can barely keep their eyes open` };
-  if (S.full   < 20) return { key:'hungry', tag:`${S.name}'s tummy is rumbling` };
-  if (S.happy  < 25) return { key:'sad',   tag:`${S.name} feels a little wistful` };
-  const avg = (S.full + S.happy + S.energy) / 3;
-  if (avg > 80 && S.happy > 78) return { key:'joy',  tag:`${S.name} is beaming!` };
-  if (avg > 60) return { key:'happy', tag:`${S.name} is content` };
-  return { key:'ok', tag:`${S.name} is pottering about` };
+  if (!P) return { key:'ok', tag:'…' };
+  if (P.asleep) return { key:'sleep', tag:`${P.name} is sleeping… tap to wake them ☀️` };
+  if (P.energy < 18) return { key:'tired', tag:`${P.name} can barely keep their eyes open` };
+  if (P.full   < 20) return { key:'hungry', tag:`${P.name}'s tummy is rumbling` };
+  if (P.happy  < 25) return { key:'sad',   tag:`${P.name} feels a little wistful` };
+  const avg = (P.full + P.happy + P.energy) / 3;
+  if (avg > 80 && P.happy > 78) return { key:'joy',  tag:`${P.name} is beaming!` };
+  if (avg > 60) return { key:'happy', tag:`${P.name} is content` };
+  return { key:'ok', tag:`${P.name} is pottering about` };
 }
 
 // ===================== RENDER (scene) =====================
@@ -398,7 +526,7 @@ function ambient(){
   const hr = new Date().getHours();
   const night = hr < 6 || hr >= 20;
   const dusk  = (hr>=18&&hr<20)||(hr>=6&&hr<8);
-  if (S && S.asleep) return { top:'#26243f', bot:'#3a3358', night:true, dim:.45 };
+  if (P && P.asleep) return { top:'#26243f', bot:'#3a3358', night:true, dim:.45 };
   if (night) return { top:'#3b3a5c', bot:'#52507a', night:true, dim:.3 };
   if (dusk)  return { top:'#f6c9a0', bot:'#f0d9c0', night:false, dim:.08 };
   return { top:'#d9eefc', bot:'#fbeed6', night:false, dim:0 };
@@ -470,7 +598,8 @@ function drawRoom(A){
 // procedural cozy creature; mood drives eyes & mouth, gentle idle bob/blink
 let blink = 0, blinkT = 0;
 function drawCreature(cx, cy, ts){
-  const sp = SPECIES[S.species];
+  if (!P) return;
+  const sp = SPECIES[P.species];
   const m = mood();
   const breathe = Math.sin(ts*0.0021)*4;
   const sleepy = m.key==='sleep';
@@ -556,7 +685,7 @@ function drawEars(cx, y, R, sp){
 }
 
 function drawZ(cx, cy, ts){
-  if (!S.asleep) return;
+  if (!P || !P.asleep) return;
   ctx.fillStyle='#ffffffcc'; ctx.textAlign='left';
   for(let i=0;i<3;i++){
     const p = ((ts*0.0006)+i*0.33)%1;
@@ -568,31 +697,39 @@ function drawZ(cx, cy, ts){
 
 // tap the pet → wake if sleeping, otherwise cuddle
 cv.addEventListener('pointerdown', e=>{
-  if (!S || !S.adopted) return;
-  if (S.asleep){
-    S.asleep = false; S.lastTs = now();
+  if (!hasPet() || !P) return;
+  if (P.asleep){
+    P.asleep = false; P.lastTs = now();
     sfx('wake'); save(); refresh();
-    toast(`Good morning, ${S.name}! ☀️`);
+    toast(`Good morning, ${P.name}! ☀️`);
     return;
   }
   const r = cv.getBoundingClientRect();
   const x = e.clientX-r.left, y = e.clientY-r.top;
-  S.happy = clamp(S.happy + 3);
+  P.happy = clamp(P.happy + 3);
   spawnHearts(3, x, y);
   sfx('cuddle');
+  gainXP(1);
   refresh(); save();
 });
 
 // ===================== UI WIRING =====================
 function refresh(){
-  const wasAwake = !S.asleep;
+  if (!P){
+    $('coinval').textContent = S ? Math.floor(S.coins) : 0;
+    $('petname').textContent = 'Mosslings';
+    $('moodtag').textContent = '…';
+    $('bFull').style.width = $('bHappy').style.width = $('bEnergy').style.width = '0%';
+    return;
+  }
+  const wasAwake = !P.asleep;
   applyDecay();
-  if (wasAwake && S.asleep){ sfx('sleep'); toast(`${S.name} yawned and curled up 💤`); }
+  if (wasAwake && P.asleep){ sfx('sleep'); toast(`${P.name} yawned and curled up 💤`); }
   $('coinval').textContent = Math.floor(S.coins);
-  $('petname').textContent = S.name || 'Mosslings';
-  $('bFull').style.width   = S.full+'%';
-  $('bHappy').style.width  = S.happy+'%';
-  $('bEnergy').style.width = S.energy+'%';
+  $('petname').textContent = P.name;
+  $('bFull').style.width   = P.full+'%';
+  $('bHappy').style.width  = P.happy+'%';
+  $('bEnergy').style.width = P.energy+'%';
   $('moodtag').textContent = mood().tag;
 }
 
@@ -602,7 +739,7 @@ function toast(msg){
   clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'),1700);
 }
 
-// ---- adopt flow ----
+// ---- adopt flow (used for first-pet and "Adopt new" from profile) ----
 function buildAdopt(){
   const row = $('speciesRow'); row.innerHTML='';
   let chosen=null;
@@ -614,27 +751,31 @@ function buildAdopt(){
       b.classList.add('sel'); checkAdopt(); };
     row.appendChild(b);
   }
-  const nameIn=$('nameIn');
+  const nameIn=$('nameIn'); nameIn.value = '';
   function checkAdopt(){ $('adoptBtn').disabled = !(chosen && nameIn.value.trim()); }
   nameIn.oninput = checkAdopt;
+  checkAdopt();
   $('adoptBtn').onclick=()=>{
-    S = freshState(); S.adopted=true; S.species=chosen||'pip';
-    S.name = nameIn.value.trim().slice(0,12) || SPECIES[S.species].name;
-    S.lastTs = now(); S.lastVisitDay = dayStr(now()); S.streak = 1; save();
+    if (!S) S = freshSave();
+    const name = nameIn.value.trim().slice(0,12) || SPECIES[chosen||'pip'].name;
+    const pet = addPet(chosen||'pip', name);
+    if (!S.lastVisitDay){ S.lastVisitDay = dayStr(now()); S.streak = 1; }
+    save();
     $('ovAdopt').classList.remove('show');
-    refresh(); toast(`Welcome home, ${S.name}! 💚`);
+    refresh(); toast(`Welcome home, ${pet.name}! 💚`);
   };
   $('ovAdopt').classList.add('show');
 }
 
 // ---- feed flow ----
 function openFeed(){
-  if (S.asleep){ toast('they are asleep — wake them first'); return; }
+  if (!P) return;
+  if (P.asleep){ toast('they are asleep — wake them first'); return; }
   const list=$('foodList'); list.innerHTML='';
-  $('feedSub').textContent = S.full>=98 ? `${S.name} is completely full!` : 'A little something to fill the tummy.';
+  $('feedSub').textContent = P.full>=98 ? `${P.name} is completely full!` : 'A little something to fill the tummy.';
   for(const f of FOODS){
     const b=document.createElement('button'); b.className='food';
-    const afford = S.coins>=f.cost && S.full<100;
+    const afford = S.coins>=f.cost && P.full<100;
     b.disabled=!afford;
     b.innerHTML=`<span class="fe">${f.e}</span><span class="fmeta"><div class="fn">${f.n}</div>
       <div class="fsub">${f.sub}</div></span><span class="cost"><span class="c"></span>${f.cost}</span>`;
@@ -650,7 +791,6 @@ function feed(f){
 }
 
 $('tFeed').onclick  = openFeed;
-$('tShop').onclick  = pickGame;
 $('tPlay').onclick  = pickGame;
 $('feedClose').onclick = ()=>$('ovFeed').classList.remove('show');
 $('mute').onclick = ()=>{ ensureAudio(); setMuted(!SND.muted); };
@@ -663,8 +803,9 @@ const mg = $('mg'), mgc = $('mgc'), mctx = mgc.getContext('2d');
 let mgMode=null, mgState=null;
 
 function pickGame(){
-  if (S.asleep){ toast('wake them up to play together'); return; }
-  if (S.energy < 12){ toast(`${S.name} is too sleepy to play`); return; }
+  if (!P) return;
+  if (P.asleep){ toast('wake them up to play together'); return; }
+  if (P.energy < 12){ toast(`${P.name} is too sleepy to play`); return; }
   $('ovGames').classList.add('show');
 }
 $('gFirefly').onclick   = ()=>{ $('ovGames').classList.remove('show'); startFirefly(); };
@@ -700,7 +841,7 @@ function startFirefly(){
   openMG();                                  // show first → mgResize fills real w/h
   $('mgScore').textContent=0; $('mgTime').textContent=20;
   $('mgmsg').innerHTML = `<h2>🎣 Firefly Catch</h2>
-    <p>Tap the fireflies before they drift away. Each one is a coin — and ${S.name} loves the company.</p>
+    <p>Tap the fireflies before they drift away. Each one is a coin — and ${P.name} loves the company.</p>
     <button class="btn" id="mgStart">Start</button><button class="btn ghost" id="mgQuit">Maybe later</button>`;
   $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); requestAnimationFrame(fireflyFrame); };
   $('mgQuit').onclick=closeGame;
@@ -741,7 +882,7 @@ function startKick(){
   resetBall();                               // size + place the ball against real dimensions
   $('mgScore').textContent=0; $('mgTime').textContent=25;
   $('mgmsg').innerHTML=`<h2>⚽ Kick-a-Ball</h2>
-    <p>Flick the ball to keep it bouncing — ${S.name} will chase and bop it back. Every kick is a coin and a happy little heart.</p>
+    <p>Flick the ball to keep it bouncing — ${P.name} will chase and bop it back. Every kick is a coin and a happy little heart.</p>
     <button class="btn" id="mgStart">Start</button><button class="btn ghost" id="mgQuit">Maybe later</button>`;
   $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); requestAnimationFrame(kickFrame); };
   $('mgQuit').onclick=closeGame;
@@ -806,7 +947,7 @@ function drawBall(b){
   mctx.fillStyle='#d76a6a'; mctx.beginPath(); mctx.arc(b.x,b.y,b.r*0.22,0,7); mctx.fill();
 }
 function drawKickPet(x, floor, R, ts){
-  const sp=SPECIES[S.species], y=floor-R*0.85 + Math.sin(ts*0.006)*2;
+  const sp=SPECIES[P.species], y=floor-R*0.85 + Math.sin(ts*0.006)*2;
   mctx.fillStyle='rgba(0,0,0,.15)'; mctx.beginPath(); mctx.ellipse(x,floor-2,R*0.8,R*0.22,0,0,7); mctx.fill();
   mctx.fillStyle=sp.body; mctx.beginPath(); mctx.ellipse(x,y,R*0.95,R*0.85,0,0,7); mctx.fill();
   mctx.fillStyle=sp.belly; mctx.beginPath(); mctx.ellipse(x,y+R*0.15,R*0.55,R*0.45,0,0,7); mctx.fill();
@@ -832,14 +973,15 @@ function endGame(mode){
   mgState.running=false;
   const earned=mgState.score;
   S.coins += earned;
-  if(mode==='kick'){ S.happy=clamp(S.happy+Math.min(28,earned*2)); S.energy=clamp(S.energy-10); }
-  else { S.happy=clamp(S.happy+Math.min(20,earned*1.5)); S.energy=clamp(S.energy-8); }
+  if(mode==='kick'){ P.happy=clamp(P.happy+Math.min(28,earned*2)); P.energy=clamp(P.energy-10); }
+  else { P.happy=clamp(P.happy+Math.min(20,earned*1.5)); P.energy=clamp(P.energy-8); }
+  gainXP(mode==='kick' ? Math.max(3, Math.floor(earned/2)) : Math.max(2, Math.floor(earned/3)));
   if (earned>0) sfx('endgame');
   save(); refresh();
   $('mgmsg').style.display='flex';
   const tail = mode==='kick'
-    ? `${S.name} chased every kick — ${earned>0?`+${earned} coins and a very happy heart.`:'still a lovely romp!'}`
-    : `${S.name} had a lovely time. ${earned>0?`+${earned} coins, and a happier heart.`:'Better luck next time!'}`;
+    ? `${P.name} chased every kick — ${earned>0?`+${earned} coins and a very happy heart.`:'still a lovely romp!'}`
+    : `${P.name} had a lovely time. ${earned>0?`+${earned} coins, and a happier heart.`:'Better luck next time!'}`;
   $('mgmsg').innerHTML=`<h2>${mode==='kick'?'⚽':'🎣'} ${earned} 🪙</h2><p>${tail}</p>
     <button class="btn" id="mgAgain">Play again</button><button class="btn ghost" id="mgDone">Done</button>`;
   $('mgAgain').onclick = mode==='kick' ? startKick : startFirefly;
@@ -858,8 +1000,8 @@ function startFeed(f){
   openMG();
   layoutFeed();
   $('mghud').style.display='none';        // feed has no score/timer
-  $('mgmsg').innerHTML=`<h2>${f.e} Feed ${S.name}</h2>
-    <p>Flick the ${f.n} off the plate up to ${S.name}'s mouth. Missed flicks bounce back — no waste.</p>
+  $('mgmsg').innerHTML=`<h2>${f.e} Feed ${P.name}</h2>
+    <p>Flick the ${f.n} off the plate up to ${P.name}'s mouth. Missed flicks bounce back — no waste.</p>
     <button class="btn" id="mgStart">Start</button><button class="btn ghost" id="mgQuit">Maybe later</button>`;
   $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); requestAnimationFrame(feedFrame); };
   $('mgQuit').onclick=closeGame;
@@ -941,15 +1083,16 @@ function eatItem(){
   const s=mgState, f=s.food, tasty=s.tasty;
   s.running=false;
   S.coins -= f.cost;
-  S.full   = clamp(S.full + f.fill);
-  S.happy  = clamp(S.happy + f.joy + (tasty?4:0));
+  P.full   = clamp(P.full + f.fill);
+  P.happy  = clamp(P.happy + f.joy + (tasty?4:0));
+  gainXP(3 + (tasty?1:0));
   s.pops.push({x:s.pet.x, y:s.pet.mouthY, life:1, txt:'💗'});
   sfx('feed'); save(); refresh();
   $('mgmsg').style.display='flex';
   const head = tasty ? `${f.e} Tasty toss!` : `${f.e} Yum`;
   const body = tasty
-    ? `${S.name} caught it mid-air! +${f.fill} tummy, +${f.joy+4} joy.`
-    : `${S.name} happily nibbled the ${f.n}. +${f.fill} tummy, +${f.joy} joy.`;
+    ? `${P.name} caught it mid-air! +${f.fill} tummy, +${f.joy+4} joy.`
+    : `${P.name} happily nibbled the ${f.n}. +${f.fill} tummy, +${f.joy} joy.`;
   $('mgmsg').innerHTML=`<h2>${head}</h2><p>${body}</p>
     <button class="btn" id="mgDone">Done</button>`;
   $('mgDone').onclick = closeGame;
@@ -971,7 +1114,7 @@ function drawFeedItem(it, food){
   mctx.textBaseline='alphabetic';
 }
 function drawFeedPet(pet, ts){
-  const sp=SPECIES[S.species], R=pet.r, x=pet.x, y=pet.y + Math.sin(ts*0.0021)*2;
+  const sp=SPECIES[P.species], R=pet.r, x=pet.x, y=pet.y + Math.sin(ts*0.0021)*2;
   mctx.fillStyle='rgba(0,0,0,.15)'; mctx.beginPath(); mctx.ellipse(x, y+R*0.95, R*0.85, R*0.28, 0,0,7); mctx.fill();
   mctx.fillStyle=sp.body;  mctx.beginPath(); mctx.ellipse(x, y, R*1.02, R*0.92, 0,0,7); mctx.fill();
   mctx.fillStyle=sp.belly; mctx.beginPath(); mctx.ellipse(x, y+R*0.18, R*0.6, R*0.5, 0,0,7); mctx.fill();
@@ -999,7 +1142,7 @@ function greetWord(){ const h=new Date().getHours();
 
 // what (if anything) is owed today — pure, doesn't mutate state until claimed
 function pendingDaily(){
-  if (!S || !S.adopted) return null;
+  if (!hasPet()) return null;
   const today = dayStr(now());
   if (S.lastVisitDay === today) return null;            // already greeted today
   const yesterday = dayStr(now() - 864e5);
@@ -1014,10 +1157,10 @@ function checkDaily(){
   const d = pendingDaily();
   if (!d) return;
   $('dailyTitle').textContent = `${greetWord()}!`;
-  let sub = d.streak > 1 ? `${S.name} kept the windowsill warm for you.`
-                         : `${S.name} is so happy to see you again!`;
-  if (S.full < 25)        sub += ` Looks a little hungry, though.`;
-  else if (S.energy < 25) sub += ` Looks a bit sleepy, too.`;
+  let sub = d.streak > 1 ? `${P.name} kept the windowsill warm for you.`
+                         : `${P.name} is so happy to see you again!`;
+  if (P.full < 25)        sub += ` Looks a little hungry, though.`;
+  else if (P.energy < 25) sub += ` Looks a bit sleepy, too.`;
   $('dailySub').textContent = sub;
   $('dailyStreak').textContent = d.streak > 1 ? `🔥 ${d.streak}-day streak · +${d.bonus} coins` : `A welcome gift · +${d.bonus} coins`;
   $('dailyClaim').onclick = ()=>claimDaily(d);
@@ -1025,28 +1168,141 @@ function checkDaily(){
 }
 function claimDaily(d){
   S.coins += d.bonus;
-  S.happy = clamp(S.happy + 10);
+  if (P) P.happy = clamp(P.happy + 10);
   S.streak = d.streak;
   S.lastVisitDay = d.today;
+  gainXP(5);
   save(); refresh();
   $('ovDaily').classList.remove('show');
   spawnHearts(4, W/2, H*0.5);
   sfx('daily');
-  toast(`+${d.bonus} coins · ${S.name} feels loved 💚`);
+  toast(`+${d.bonus} coins · ${P ? P.name : 'they'} feels loved 💚`);
 }
+
+// ===================== EXPLORE — world map =====================
+// Each PLACE is a tappable location on the map with a per-pet cooldown.
+// Visiting always rewards a little XP; some places have a chance at coins or a
+// free snack effect. No fail state — the cooldown is the only friction so the
+// world feels lived-in rather than grindable.
+const PLACES = [
+  { id:'meadow', e:'☀️', n:'Meadow',   x:0.18, y:0.28, cd:20,
+    visit:()=>{ P.happy = clamp(P.happy + 6);
+      return { xp:3, msg:`${P.name} basked in the sun` }; } },
+  { id:'wood',   e:'🌲', n:'Wood',     x:0.78, y:0.22, cd:30,
+    visit:()=>{ const c = Math.random()<0.45 ? 2 : 0; if (c) S.coins += c;
+      return { xp:3, coins:c, msg: c ? `${P.name} found ${c} coins in the leaves`
+                                    : `${P.name} listened to the wind` }; } },
+  { id:'pond',   e:'✨', n:'Star Pond', x:0.50, y:0.62, cd:60, only:'night',
+    visit:()=>{ P.happy = clamp(P.happy + 5); S.coins += 1;
+      return { xp:5, coins:1, msg:`${P.name} watched the stars on the water` }; } },
+  { id:'grove',  e:'🍄', n:'Grove',    x:0.28, y:0.82, cd:45,
+    visit:()=>{ const lucky = Math.random()<0.5;
+      if (lucky){ P.full = clamp(P.full + 18); P.happy = clamp(P.happy + 3); }
+      return { xp:3, msg: lucky ? `${P.name} nibbled a wild Sunberry`
+                                : `${P.name} rested under the moss` }; } },
+];
+
+function openExplore(){
+  if (!P) return;
+  if (P.asleep){ toast(`${P.name} is sleeping — let them rest first`); return; }
+  renderMap();
+  $('ovExplore').classList.add('show');
+}
+function renderMap(){
+  const mv = $('mapView'); mv.innerHTML = '';
+  const hr = new Date().getHours(), isNight = hr<6 || hr>=20;
+  P.lastVisits = P.lastVisits || {};
+  for (const pl of PLACES){
+    const b = document.createElement('button'); b.className = 'loc';
+    b.style.left = `calc(${pl.x*100}% - 32px)`;
+    b.style.top  = `calc(${pl.y*100}% - 32px)`;
+    const last = P.lastVisits[pl.id] || 0;
+    const cdLeft = Math.max(0, last + pl.cd*60000 - now());
+    const nightLock = (pl.only==='night') && !isNight;
+    b.disabled = cdLeft>0 || nightLock;
+    let cdLabel = '';
+    if (cdLeft>0){ const m = Math.ceil(cdLeft/60000); cdLabel = m+'m'; }
+    else if (nightLock) cdLabel = '☾ at night';
+    b.innerHTML = `<div class="le">${pl.e}</div><div class="ln">${pl.n}</div>
+      ${cdLabel?`<div class="lcd">${cdLabel}</div>`:''}`;
+    b.onclick = ()=>visitPlace(pl);
+    mv.appendChild(b);
+  }
+}
+function visitPlace(pl){
+  if (!P) return;
+  P.lastVisits = P.lastVisits || {};
+  P.lastVisits[pl.id] = now();
+  const r = pl.visit();
+  gainXP(r.xp || 0);
+  sfx(r.coins ? 'firefly' : 'cuddle');
+  save(); refresh();
+  $('ovExplore').classList.remove('show');
+  const bits = [r.msg];
+  if (r.coins) bits.push(`+${r.coins} 🪙`);
+  bits.push(`+${r.xp} XP`);
+  toast(bits.join(' · '));
+}
+
+// ===================== PET PROFILE & ROSTER =====================
+function petEmoji(species){
+  const ear = SPECIES[species].ear;
+  return ear==='leaf' ? '🌱' : ear==='cap' ? '🍄' : '🦉';
+}
+function openProfile(){
+  if (!hasPet()) return;
+  renderProfile();
+  $('ovProfile').classList.add('show');
+}
+function renderProfile(){
+  const need = xpToNext(P.level||0);
+  const xpPct = Math.max(0, Math.min(100, (P.xp/need)*100));
+  $('profCard').innerHTML = `<div class="pemoji">${petEmoji(P.species)}</div>
+    <div class="pinfo">
+      <div class="pname">${P.name}</div>
+      <div class="ptitle">Lv ${P.level||0} · ${titleOf(P)}</div>
+      <div class="xpbar"><div class="xfill" style="width:${xpPct}%"></div></div>
+      <div class="xptag">${P.xp} / ${need} XP</div>
+    </div>`;
+  const list = $('rosterList'); list.innerHTML = '';
+  const others = S.pets.filter(p => p.id !== P.id);
+  if (!others.length){
+    list.innerHTML = `<div class="rosterEmpty">Just ${P.name} for now. Adopt more below.</div>`;
+  } else {
+    for (const p of others){
+      const b = document.createElement('button'); b.className='rosterItem';
+      b.innerHTML = `<span class="re">${petEmoji(p.species)}</span>
+        <span class="rn">${p.name}</span>
+        <span class="rt">Lv ${p.level||0} · ${titleOf(p)}</span>`;
+      b.onclick = ()=>{
+        switchPet(p.id);
+        $('ovProfile').classList.remove('show');
+        refresh();
+        toast(`Switched to ${P.name}`);
+      };
+      list.appendChild(b);
+    }
+  }
+}
+
+$('exploreClose').onclick = ()=>$('ovExplore').classList.remove('show');
+$('tExplore').onclick     = openExplore;
+$('profileClose').onclick = ()=>$('ovProfile').classList.remove('show');
+$('adoptNewBtn').onclick  = ()=>{ $('ovProfile').classList.remove('show'); buildAdopt(); };
+$('petname').onclick      = openProfile;
 
 // ===================== BOOT =====================
 function boot(){
   resize();
   $('mute').textContent = SND.muted ? '🔇' : '🔊';
   S = load();
-  if (!S){ S = freshState(); buildAdopt(); }
-  else { refresh(); checkDaily(); }
+  if (!hasPet()){ S = S || freshSave(); buildAdopt(); }
+  else { refreshP(); refresh(); checkDaily(); }
   requestAnimationFrame(frame);
   // tick the world every few seconds while open, and on refocus
-  setInterval(()=>{ if (S && S.adopted){ refresh(); save(); } }, 5000);
+  setInterval(()=>{ if (hasPet()){ refresh(); save(); } }, 5000);
   document.addEventListener('visibilitychange', ()=>{
-    if(!document.hidden && S && S.adopted){ refresh(); save(); checkDaily(); }   // catch midnight crossings
+    if(!document.hidden && hasPet()){ refresh(); save(); checkDaily(); }   // catch midnight crossings
   });
 }
 boot();
