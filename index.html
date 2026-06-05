@@ -34,6 +34,11 @@
     padding:5px 12px;border-radius:20px;box-shadow:var(--shadow);font-weight:700;font-size:15px;}
   #coins .c{width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#f6d878,var(--coin));
     box-shadow:inset 0 -2px 0 rgba(150,110,20,.35);}
+  #hudright{display:flex;align-items:center;gap:8px;}
+  #mute{background:var(--card);border:none;border-radius:50%;width:32px;height:32px;
+    box-shadow:var(--shadow);font-size:15px;cursor:pointer;color:var(--ink-soft);
+    display:flex;align-items:center;justify-content:center;padding:0;transition:transform .08s;}
+  #mute:active{transform:scale(.92);}
   .bars{display:flex;flex-direction:column;gap:7px;}
   .bar{display:flex;align-items:center;gap:9px;}
   .bar .ic{width:22px;text-align:center;font-size:16px;}
@@ -123,7 +128,10 @@
   <div id="hud">
     <div class="hudtop">
       <div id="petname">Mosslings</div>
-      <div id="coins"><span class="c"></span><span id="coinval">0</span></div>
+      <div id="hudright">
+        <button id="mute" title="sound">🔇</button>
+        <div id="coins"><span class="c"></span><span id="coinval">0</span></div>
+      </div>
     </div>
     <div class="bars">
       <div class="bar full"><span class="ic">🍓</span><div class="track"><div class="fill" id="bFull"></div></div></div>
@@ -245,6 +253,85 @@ function load(){
   return null;
 }
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
+
+// ===================== SOUND (WebAudio, synthesized) =====================
+// Cozy procedural audio: no asset files. One AudioContext lazy-built on the
+// first user gesture (autoplay policy). A handful of short SFX + an optional
+// gentle ambient pad. Mute state persists separately from the pet save.
+const MUTE_KEY = 'mossling.muted.v1';
+const SND = { ctx:null, master:null, muted:true, amb:null };
+SND.muted = localStorage.getItem(MUTE_KEY) !== '0';      // default: muted
+
+function ensureAudio(){
+  if (SND.ctx){ if (SND.ctx.state==='suspended') SND.ctx.resume(); return SND.ctx; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  SND.ctx = new AC();
+  SND.master = SND.ctx.createGain();
+  SND.master.gain.value = SND.muted ? 0 : 0.6;
+  SND.master.connect(SND.ctx.destination);
+  return SND.ctx;
+}
+function setMuted(m){
+  SND.muted = m;
+  localStorage.setItem(MUTE_KEY, m ? '1' : '0');
+  if (SND.master) SND.master.gain.setTargetAtTime(m ? 0 : 0.6, SND.ctx.currentTime, 0.05);
+  if (m) stopAmbient(); else startAmbient();
+  const b = $('mute'); if (b) b.textContent = m ? '🔇' : '🔊';
+}
+
+// envelope helper: short tone with attack/decay
+function tone(freq, dur, type='sine', vol=0.25, attack=0.01, decay){
+  const ctx = ensureAudio(); if (!ctx || SND.muted) return;
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq;
+  const g = ctx.createGain(); g.gain.value = 0;
+  o.connect(g); g.connect(SND.master);
+  g.gain.linearRampToValueAtTime(vol, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+function seq(notes, type='triangle', vol=0.22){    // simple melodic burst
+  const ctx = ensureAudio(); if (!ctx || SND.muted) return;
+  notes.forEach(([f,delay,dur=0.18])=>{
+    setTimeout(()=>tone(f, dur, type, vol, 0.005), delay*1000);
+  });
+}
+function sfx(kind){
+  if (SND.muted) return;
+  switch(kind){
+    case 'cuddle':   tone(880, 0.22, 'sine', 0.22); setTimeout(()=>tone(1175,0.18,'sine',0.18),60); break;
+    case 'feed':     seq([[660,0],[880,0.08,0.22]],'triangle',0.22); break;
+    case 'kick':     tone(420+Math.random()*120, 0.12, 'square', 0.16, 0.003); break;
+    case 'petkick':  tone(720, 0.10, 'sine', 0.14); break;
+    case 'firefly':  tone(1320, 0.18, 'sine', 0.20); setTimeout(()=>tone(1760,0.14,'sine',0.14),50); break;
+    case 'sleep':    seq([[523,0,0.3],[392,0.1,0.4]],'sine',0.18); break;
+    case 'wake':     seq([[523,0],[659,0.08],[784,0.16,0.22]],'sine',0.20); break;
+    case 'daily':    seq([[523,0],[659,0.09],[784,0.18],[1047,0.27,0.32]],'triangle',0.22); break;
+    case 'endgame':  seq([[523,0],[659,0.1],[784,0.2],[1047,0.3,0.28]],'triangle',0.22); break;
+  }
+}
+
+// gentle ambient pad — two soft sine voices, low volume, retuned by time-of-day
+function startAmbient(){
+  const ctx = ensureAudio(); if (!ctx || SND.muted || SND.amb) return;
+  const hr = new Date().getHours(), night = hr<6 || hr>=20;
+  const root = night ? 220 : 261.63;                     // A3 at night, C4 in day
+  const fifth = root * 1.5;
+  const make = (f)=>{ const o=ctx.createOscillator(); o.type='sine'; o.frequency.value=f;
+    const g=ctx.createGain(); g.gain.value=0; o.connect(g); g.connect(SND.master);
+    g.gain.linearRampToValueAtTime(0.04, ctx.currentTime+2); o.start(); return {o,g}; };
+  SND.amb = { a: make(root), b: make(fifth) };
+}
+function stopAmbient(){
+  if (!SND.amb) return;
+  const ctx = SND.ctx, t = ctx.currentTime;
+  for (const v of [SND.amb.a, SND.amb.b]){
+    v.g.gain.cancelScheduledValues(t); v.g.gain.linearRampToValueAtTime(0, t+0.4);
+    v.o.stop(t+0.5);
+  }
+  SND.amb = null;
+}
 
 function freshState(){
   return { adopted:false, name:'', species:'pip',
@@ -474,6 +561,7 @@ cv.addEventListener('pointerdown', e=>{
   const x = e.clientX-r.left, y = e.clientY-r.top;
   S.happy = clamp(S.happy + 3);
   spawnHearts(3, x, y);
+  sfx('cuddle');
   refresh(); save();
 });
 
@@ -543,6 +631,7 @@ function feed(f){
   S.full = clamp(S.full + f.fill);
   S.happy = clamp(S.happy + f.joy);
   spawnHearts(2, W/2, H*0.5);
+  sfx('feed');
   save(); refresh();
   toast(`${S.name} nibbles the ${f.n} 😋`);
   if (S.full>=100 || S.coins<3) $('ovFeed').classList.remove('show'); else openFeed();
@@ -552,6 +641,7 @@ function feed(f){
 function toggleSleep(){
   if (!S.asleep && S.energy>=100){ toast(`${S.name} is wide awake!`); return; }
   S.asleep = !S.asleep; S.lastTs = now(); save(); refresh();
+  sfx(S.asleep ? 'sleep' : 'wake');
   toast(S.asleep ? `Goodnight, ${S.name} 💤` : `Good morning! ☀️`);
 }
 
@@ -560,6 +650,7 @@ $('tSleep').onclick = toggleSleep;
 $('tShop').onclick  = pickGame;
 $('tPlay').onclick  = pickGame;
 $('feedClose').onclick = ()=>$('ovFeed').classList.remove('show');
+$('mute').onclick = ()=>{ ensureAudio(); setMuted(!SND.muted); };
 
 // ===================== MINI-GAMES =====================
 // Two cozy thumb-games on a shared overlay/canvas. Firefly Catch is the steady
@@ -607,6 +698,7 @@ function startFirefly(){
 function fireflyTap(x,y){
   for(let i=mgState.flies.length-1;i>=0;i--){ const f=mgState.flies[i];
     if (Math.hypot(f.x-x,f.y-y) < f.r+16){ mgState.flies.splice(i,1); mgState.score++;
+      sfx('firefly');
       mctx.fillStyle='#fff'; mctx.font='20px serif'; mctx.textAlign='center'; mctx.fillText('✨',f.x,f.y); break; } }
 }
 function fireflyFrame(ts){
@@ -653,6 +745,7 @@ function kickTap(x,y){
     b.vy = -Math.abs(Math.sin(ang)*0.42) - 0.42;   // always lofts upward
     mgState.score++; mgState.rally++; mgState.best=Math.max(mgState.best,mgState.rally);
     mgState.pops.push({x:b.x,y:b.y-b.r,life:1,txt:'💗'});
+    sfx('kick');
   }
 }
 function kickFrame(ts){
@@ -680,6 +773,7 @@ function kickFrame(ts){
     b.vy = -0.5 - Math.random()*0.15;
     b.vx = (w*0.5-b.x)*0.0009 + (Math.random()-0.5)*0.15;
     p.kickCd=350; s.pops.push({x:p.x,y:petTop,life:1,txt:'✨'});
+    sfx('petkick');
   }
 
   // draw
@@ -730,6 +824,7 @@ function endGame(mode){
   S.coins += earned;
   if(mode==='kick'){ S.happy=clamp(S.happy+Math.min(28,earned*2)); S.energy=clamp(S.energy-10); }
   else { S.happy=clamp(S.happy+Math.min(20,earned*1.5)); S.energy=clamp(S.energy-8); }
+  if (earned>0) sfx('endgame');
   save(); refresh();
   $('mgmsg').style.display='flex';
   const tail = mode==='kick'
@@ -783,12 +878,14 @@ function claimDaily(d){
   save(); refresh();
   $('ovDaily').classList.remove('show');
   spawnHearts(4, W/2, H*0.5);
+  sfx('daily');
   toast(`+${d.bonus} coins · ${S.name} feels loved 💚`);
 }
 
 // ===================== BOOT =====================
 function boot(){
   resize();
+  $('mute').textContent = SND.muted ? '🔇' : '🔊';
   S = load();
   if (!S){ S = freshState(); buildAdopt(); }
   else { refresh(); checkDaily(); }
