@@ -627,14 +627,8 @@ function openFeed(){
 }
 function feed(f){
   if (S.coins < f.cost) return;
-  S.coins -= f.cost;
-  S.full = clamp(S.full + f.fill);
-  S.happy = clamp(S.happy + f.joy);
-  spawnHearts(2, W/2, H*0.5);
-  sfx('feed');
-  save(); refresh();
-  toast(`${S.name} nibbles the ${f.n} 😋`);
-  if (S.full>=100 || S.coins<3) $('ovFeed').classList.remove('show'); else openFeed();
+  $('ovFeed').classList.remove('show');
+  startFeed(f);                          // → flick-to-feed mini-game; coins debited on eat
 }
 
 // ---- sleep toggle ----
@@ -672,7 +666,7 @@ function mgResize(){ const r=mg.getBoundingClientRect();
   const w=r.width||window.innerWidth, h=r.height||window.innerHeight;   // never 0 (e.g. mid-show)
   mgc.width=w*DPR; mgc.height=h*DPR;
   mctx.setTransform(DPR,0,0,DPR,0,0); if(mgState){ mgState.w=w; mgState.h=h; } }
-function openMG(){ mg.classList.add('show'); $('mgmsg').style.display='flex'; mgResize(); }
+function openMG(){ mg.classList.add('show'); $('mgmsg').style.display='flex'; $('mghud').style.display='flex'; mgResize(); }
 function closeGame(){ mg.classList.remove('show'); mgState=null; mgMode=null; refresh(); }
 
 // shared canvas input → dispatch to the active game
@@ -681,7 +675,14 @@ mgc.addEventListener('pointerdown', e=>{
   const r=mgc.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top;
   if (mgMode==='firefly') fireflyTap(x,y);
   else if (mgMode==='kick') kickTap(x,y);
+  else if (mgMode==='feed'){ if (feedDown(x,y)) mgc.setPointerCapture(e.pointerId); }
 });
+mgc.addEventListener('pointermove', e=>{
+  if (mgMode!=='feed' || !mgState || !mgState.running) return;
+  const r=mgc.getBoundingClientRect(); feedMove(e.clientX-r.left, e.clientY-r.top);
+});
+mgc.addEventListener('pointerup',     ()=>{ if (mgMode==='feed') feedUp(); });
+mgc.addEventListener('pointercancel', ()=>{ if (mgMode==='feed') feedUp(); });
 
 // ---------- Firefly Catch ----------
 function startFirefly(){
@@ -834,6 +835,149 @@ function endGame(mode){
     <button class="btn" id="mgAgain">Play again</button><button class="btn ghost" id="mgDone">Done</button>`;
   $('mgAgain').onclick = mode==='kick' ? startKick : startFirefly;
   $('mgDone').onclick  = closeGame;
+}
+
+// ---------- Feed (flick from plate to pet) ----------
+// Pick food in shop → this mini-game opens. Drag the snack off the plate at the
+// bottom and flick it up to the Mossling's open mouth. Missed flicks bounce back
+// to the plate (cozy promise — never lose food). Coins only debit on a successful
+// eat. "Tasty toss" = caught mid-flight without touching the plate → bonus joy.
+function startFeed(f){
+  mgMode='feed';
+  mgState={ food:f, w:0, h:0, last:performance.now(), running:false,
+    item:null, plate:null, pet:null, pops:[], samples:[], tasty:true };
+  openMG();
+  layoutFeed();
+  $('mghud').style.display='none';        // feed has no score/timer
+  $('mgmsg').innerHTML=`<h2>${f.e} Feed ${S.name}</h2>
+    <p>Flick the ${f.n} off the plate up to ${S.name}'s mouth. Missed flicks bounce back — no waste.</p>
+    <button class="btn" id="mgStart">Start</button><button class="btn ghost" id="mgQuit">Maybe later</button>`;
+  $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); requestAnimationFrame(feedFrame); };
+  $('mgQuit').onclick=closeGame;
+}
+function layoutFeed(){
+  const s=mgState, w=s.w, h=s.h;
+  const R=Math.min(w,h)*0.18, py=h*0.36;
+  s.pet  = { x:w*0.5, y:py, r:R, mouthY:py+R*0.34, openMouth:0 };
+  s.plate= { x:w*0.5, y:h*0.80, r:Math.min(w,h)*0.18 };
+  const ir=Math.min(w,h)*0.06;
+  s.item = { x:s.plate.x, y:s.plate.y-ir*0.5, vx:0, vy:0, r:ir, dragging:false, settled:true };
+}
+function feedDown(x,y){
+  const s=mgState, it=s.item;
+  if (!it.settled) return false;
+  if (Math.hypot(it.x-x, it.y-y) < it.r+24){
+    it.dragging=true; it.settled=false; it.vx=0; it.vy=0;
+    s.samples=[{x,y,t:performance.now()}];
+    it.x=x; it.y=y;
+    return true;
+  }
+  return false;
+}
+function feedMove(x,y){
+  const s=mgState, it=s.item;
+  if (!it.dragging) return;
+  it.x=x; it.y=y;
+  s.samples.push({x,y,t:performance.now()});
+  if (s.samples.length>6) s.samples.shift();
+}
+function feedUp(){
+  const s=mgState; if (!s||!s.item||!s.item.dragging) return;
+  const it=s.item; it.dragging=false;
+  const a=s.samples[0], b=s.samples[s.samples.length-1];
+  if (a && b && b!==a){
+    const dt=Math.max(8, b.t-a.t);
+    it.vx=(b.x-a.x)/dt; it.vy=(b.y-a.y)/dt;
+  } else { it.vx=0; it.vy=0; }
+  s.samples=[];
+}
+function feedFrame(ts){
+  if(!mgState||!mgState.running) return;
+  const dt=Math.min(50, ts-mgState.last); mgState.last=ts;
+  const s=mgState, it=s.item, pet=s.pet, plate=s.plate;
+
+  if (!it.dragging && !it.settled){
+    const px=it.x, py=it.y;                 // segment start (for swept catch check)
+    it.vy += 0.0014*dt;                     // gravity
+    it.x  += it.vx*dt; it.y += it.vy*dt;
+    if (it.x < it.r){ it.x=it.r; it.vx=Math.abs(it.vx)*0.7; }
+    if (it.x > s.w-it.r){ it.x=s.w-it.r; it.vx=-Math.abs(it.vx)*0.7; }
+    if (it.y < it.r){ it.y=it.r; it.vy=Math.abs(it.vy)*0.5; s.tasty=false; }  // ceiling
+    // swept catch: closest point on segment (prev→new) to pet's mouth
+    const vx=it.x-px, vy=it.y-py, ux=pet.x-px, uy=pet.mouthY-py;
+    const tt = Math.max(0, Math.min(1, (ux*vx+uy*vy)/((vx*vx+vy*vy)||1)));
+    if (Math.hypot(px+tt*vx-pet.x, py+tt*vy-pet.mouthY) < pet.r*0.55){ eatItem(); return; }
+    // landed on/near the plate → bounce + eventually settle (no loss)
+    const restY = plate.y - it.r*0.5;
+    if (it.y > restY){
+      it.y = restY;
+      if (Math.abs(it.vy) > 0.08){ it.vy = -it.vy*0.45; it.vx *= 0.7; s.tasty=false; }
+      else { it.vx=0; it.vy=0; it.settled=true; it.x = plate.x; s.tasty=false; }
+    }
+  }
+  // pet's mouth opens as food approaches
+  const md = Math.hypot(it.x-pet.x, it.y-pet.mouthY);
+  pet.openMouth = Math.max(0, Math.min(1, 1 - md/(pet.r*2.2)));
+
+  feedBG(s);
+  drawFeedPet(pet, ts);
+  drawPlate(plate);
+  drawFeedItem(it, s.food, ts);
+  for(let i=s.pops.length-1;i>=0;i--){ const o=s.pops[i]; o.y-=0.04*dt; o.life-=dt*0.0016;
+    if(o.life<=0){ s.pops.splice(i,1); continue; }
+    mctx.globalAlpha=o.life; mctx.font='22px serif'; mctx.textAlign='center'; mctx.fillText(o.txt,o.x,o.y); mctx.globalAlpha=1; }
+  requestAnimationFrame(feedFrame);
+}
+function eatItem(){
+  const s=mgState, f=s.food, tasty=s.tasty;
+  s.running=false;
+  S.coins -= f.cost;
+  S.full   = clamp(S.full + f.fill);
+  S.happy  = clamp(S.happy + f.joy + (tasty?4:0));
+  s.pops.push({x:s.pet.x, y:s.pet.mouthY, life:1, txt:'💗'});
+  sfx('feed'); save(); refresh();
+  $('mgmsg').style.display='flex';
+  const head = tasty ? `${f.e} Tasty toss!` : `${f.e} Yum`;
+  const body = tasty
+    ? `${S.name} caught it mid-air! +${f.fill} tummy, +${f.joy+4} joy.`
+    : `${S.name} happily nibbled the ${f.n}. +${f.fill} tummy, +${f.joy} joy.`;
+  $('mgmsg').innerHTML=`<h2>${head}</h2><p>${body}</p>
+    <button class="btn" id="mgDone">Done</button>`;
+  $('mgDone').onclick = closeGame;
+}
+function feedBG(s){
+  const g=mctx.createLinearGradient(0,0,0,s.h); g.addColorStop(0,'#f7e9d0'); g.addColorStop(1,'#e8c89a');
+  mctx.fillStyle=g; mctx.fillRect(0,0,s.w,s.h);
+  mctx.fillStyle='#d9b787'; mctx.fillRect(0, s.h*0.78, s.w, 3);   // table line
+}
+function drawPlate(p){
+  mctx.fillStyle='rgba(0,0,0,.14)'; mctx.beginPath(); mctx.ellipse(p.x, p.y+6, p.r*1.05, p.r*0.30, 0,0,7); mctx.fill();
+  mctx.fillStyle='#fffaf1';         mctx.beginPath(); mctx.ellipse(p.x, p.y,   p.r,      p.r*0.30, 0,0,7); mctx.fill();
+  mctx.fillStyle='#ecd9bf';         mctx.beginPath(); mctx.ellipse(p.x, p.y,   p.r*0.84, p.r*0.25, 0,0,7); mctx.fill();
+}
+function drawFeedItem(it, food){
+  mctx.fillStyle='rgba(0,0,0,.12)'; mctx.beginPath(); mctx.ellipse(it.x, it.y+it.r*1.2, it.r*0.7, it.r*0.22, 0,0,7); mctx.fill();
+  mctx.font=`${it.r*2.2}px serif`; mctx.textAlign='center'; mctx.textBaseline='middle';
+  mctx.fillText(food.e, it.x, it.y);
+  mctx.textBaseline='alphabetic';
+}
+function drawFeedPet(pet, ts){
+  const sp=SPECIES[S.species], R=pet.r, x=pet.x, y=pet.y + Math.sin(ts*0.0021)*2;
+  mctx.fillStyle='rgba(0,0,0,.15)'; mctx.beginPath(); mctx.ellipse(x, y+R*0.95, R*0.85, R*0.28, 0,0,7); mctx.fill();
+  mctx.fillStyle=sp.body;  mctx.beginPath(); mctx.ellipse(x, y, R*1.02, R*0.92, 0,0,7); mctx.fill();
+  mctx.fillStyle=sp.belly; mctx.beginPath(); mctx.ellipse(x, y+R*0.18, R*0.6, R*0.5, 0,0,7); mctx.fill();
+  // happy eyes
+  mctx.strokeStyle='#4a3b30'; mctx.lineWidth=R*0.07; mctx.lineCap='round';
+  for (const sgn of [-1,1]){ mctx.beginPath(); mctx.arc(x+sgn*R*0.34, y-R*0.03, R*0.17, 1.15*Math.PI, 1.85*Math.PI); mctx.stroke(); }
+  // cheeks
+  mctx.fillStyle=sp.cheek; mctx.globalAlpha=0.7;
+  mctx.beginPath(); mctx.arc(x-R*0.42, y+R*0.18, R*0.10, 0,7); mctx.fill();
+  mctx.beginPath(); mctx.arc(x+R*0.42, y+R*0.18, R*0.10, 0,7); mctx.fill();
+  mctx.globalAlpha=1;
+  // mouth — grows as food approaches
+  const mO=pet.openMouth, mY=y+R*0.34;
+  mctx.fillStyle='#7a4a44';
+  mctx.beginPath(); mctx.ellipse(x, mY, R*(0.07+0.13*mO), R*(0.09+0.22*mO), 0,0,7); mctx.fill();
 }
 
 // ===================== DAILY GREETING + BONUS =====================
