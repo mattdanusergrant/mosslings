@@ -237,6 +237,7 @@ const FOODS = [
 const DECAY = { full: 7, happy: 4.5, energyAwake: 5.5, energyAsleep: -22 };
 const MAX_CATCHUP_H = 36;     // cap offline simulation so it never feels punishing
 const TIRED_SLEEP_AT = 15;    // pet auto-naps when energy crosses this threshold
+const SLEEP_DECAY_MULT = 0.35;// hunger/happy decay much slower while asleep — sleep restores
 
 let S = null;        // game state
 let now = () => Date.now();
@@ -356,10 +357,11 @@ function applyDecay(){
       segH = Math.min(segH, (S.energy - TIRED_SLEEP_AT) / DECAY.energyAwake);
     }
     const eRate = S.asleep ? DECAY.energyAsleep : DECAY.energyAwake;
-    S.full   = clamp(S.full   - DECAY.full  * segH);
-    S.happy  = clamp(S.happy  - DECAY.happy * segH);
+    const m = S.asleep ? SLEEP_DECAY_MULT : 1;
+    S.full   = clamp(S.full   - DECAY.full  * segH * m);
+    S.happy  = clamp(S.happy  - DECAY.happy * segH * m);
     S.energy = clamp(S.energy - eRate * segH);
-    if (S.full < 25 || S.energy < 25) S.happy = Math.max(S.happy - 4*segH, 18);
+    if (S.full < 25 || S.energy < 25) S.happy = Math.max(S.happy - 4*segH*m, 18);
     hLeft -= segH;
     if (!S.asleep && S.energy <= TIRED_SLEEP_AT + 0.01) S.asleep = true;
   }
