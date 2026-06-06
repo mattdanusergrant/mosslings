@@ -512,7 +512,7 @@ function mood(){
 // ===================== RENDER (scene) =====================
 const cv = $('c'), ctx = cv.getContext('2d');
 let DPR=1, W=0, H=0;
-let petCYRatio = 0.58;     // 0.58 = home; eases to 0.48 when feedTray active
+let petCYRatio = 0.58;     // 0.58 = home; eases to 0.22 (near top) when feedTray active
 function resize(){
   DPR = Math.min(2, window.devicePixelRatio||1);
   const r = $('scene').getBoundingClientRect();
@@ -560,7 +560,7 @@ function frame(ts){
 
   drawRoom(A);
   const cx = W/2;
-  petCYRatio += ((feedTray ? 0.48 : 0.58) - petCYRatio) * 0.08;
+  petCYRatio += ((feedTray ? 0.22 : 0.58) - petCYRatio) * 0.08;
   const cy = H * petCYRatio;
   drawCreature(cx, cy, ts);
   drawZ(cx, cy, ts);
