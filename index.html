@@ -1337,6 +1337,7 @@ function startWalk(pl){
     time: 14, last: performance.now(), running: false,
     w: 0, h: 0,
     petX: -120, step: 0,
+    petAir: 0, petVy: 0,                    // jump physics (offset from ground; -ve = up)
     items: [], pops: [], spawnT: 600,
     collected: 0, coinsEarned: 0,
     bgScroll: 0,
@@ -1345,7 +1346,7 @@ function startWalk(pl){
   $('mgScore').textContent = 0;
   $('mgTime').textContent = 14;
   $('mgmsg').innerHTML = `<h2>${pl.e} ${pl.n} walk</h2>
-    <p>${P.name} will stroll through. Tap things you'd like them to keep — anything they walk past will join them too.</p>
+    <p>${P.name} will run along. Tap the screen to make them jump — time it right to snatch things out of the air!</p>
     <button class="btn" id="mgStart">Let's go</button>
     <button class="btn ghost" id="mgQuit">Maybe later</button>`;
   $('mgStart').onclick = ()=>{
@@ -1369,22 +1370,31 @@ function walkFrame(ts){
   $('mgTime').textContent = Math.max(0, Math.ceil(s.time));
   $('mgScore').textContent = s.collected;
 
-  // pet eases in from left, then walks in place while world scrolls
+  // pet eases in from left, then runs in place while world scrolls
   const targetX = s.w * 0.32;
   s.petX += (targetX - s.petX) * 0.04;
   s.step += dt * 0.008;
   s.bgScroll += dt * 0.12;
 
+  // jump physics: gravity always; land at petAir = 0
+  s.petVy += 0.0050 * dt;
+  s.petAir += s.petVy * dt;
+  if (s.petAir > 0){ s.petAir = 0; s.petVy = 0; }
+
+  // spawn items at jumpable heights (above the ground, within jump reach)
   s.spawnT -= dt;
   if (s.spawnT <= 0){
-    s.spawnT = 800 + Math.random() * 700;
+    s.spawnT = 850 + Math.random() * 600;
     const items = s.scene.items;
+    const groundY = s.h * 0.72;
+    const lowest  = 30;                  // just above pet's head
+    const highest = 210;                 // near the peak of a good jump
     s.items.push({
       x: s.w + 40,
-      y: s.h * (0.50 + Math.random() * 0.22),
-      r: 22,
+      y: groundY - (lowest + Math.random() * (highest - lowest)),
+      r: 24,
       e: items[Math.floor(Math.random() * items.length)],
-      vx: -0.14 - Math.random() * 0.05,
+      vx: -0.16 - Math.random() * 0.05,
       wob: Math.random() * 6.28,
     });
   }
@@ -1436,17 +1446,25 @@ function walkDrawPet(s, ts){
   const sp = SPECIES[P.species];
   const R = Math.min(s.w, s.h) * 0.12;
   const x = s.petX;
-  const y = s.h * 0.78 - R * 0.55 + Math.sin(s.step * 2) * 3;
-  // shadow
-  mctx.fillStyle = 'rgba(0,0,0,.20)';
-  mctx.beginPath(); mctx.ellipse(x, y + R * 0.95, R * 0.85, R * 0.28, 0, 0, 7); mctx.fill();
+  const airborne = s.petAir < -1;
+  const stepBob = airborne ? 0 : Math.sin(s.step * 2) * 3;
+  const groundY = s.h * 0.72;
+  const y = groundY + s.petAir + stepBob;
+  // shadow stays on the ground; shrinks/fades with jump height
+  const airT = Math.min(1, -s.petAir / 220);
+  mctx.fillStyle = `rgba(0,0,0,${0.22 * (1 - airT * 0.7)})`;
+  mctx.beginPath();
+  mctx.ellipse(x, groundY + R * 0.95, R * (0.85 - 0.35 * airT), R * 0.28, 0, 0, 7);
+  mctx.fill();
   // body
   mctx.fillStyle = sp.body;
   mctx.beginPath(); mctx.ellipse(x, y, R * 1.02, R * 0.92, 0, 0, 7); mctx.fill();
   mctx.fillStyle = sp.belly;
   mctx.beginPath(); mctx.ellipse(x, y + R * 0.18, R * 0.6, R * 0.5, 0, 0, 7); mctx.fill();
-  // alternating feet
-  const f1 = Math.sin(s.step * 4) * 4, f2 = -f1;
+  // feet: tucked up while airborne, running cycle while grounded
+  let f1, f2;
+  if (airborne){ f1 = -R * 0.22; f2 = -R * 0.22; }
+  else { f1 = Math.sin(s.step * 4) * 4; f2 = -f1; }
   mctx.fillStyle = sp.body;
   mctx.beginPath(); mctx.ellipse(x - R * 0.42, y + R * 0.82 + f1, R * 0.22, R * 0.16, 0, 0, 7); mctx.fill();
   mctx.beginPath(); mctx.ellipse(x + R * 0.42, y + R * 0.82 + f2, R * 0.22, R * 0.16, 0, 0, 7); mctx.fill();
@@ -1465,18 +1483,23 @@ function walkDrawPet(s, ts){
 }
 
 function walkDrawItems(s, dt){
+  const groundY = s.h * 0.72;
+  const petCx = s.petX, petCy = groundY + s.petAir;
+  const R = Math.min(s.w, s.h) * 0.12;
+  const catchR = R * 0.85;
   for (let i = s.items.length - 1; i >= 0; i--){
     const it = s.items[i];
     it.x += it.vx * dt;
     it.wob += 0.05;
     if (it.x < -60){ s.items.splice(i, 1); continue; }
-    // auto-collect when pet passes through
-    if (Math.abs(it.x - s.petX) < 36 && Math.abs(it.y - s.h * 0.72) < 70){
+    const drawY = it.y + Math.sin(it.wob) * 4;
+    // collect only when the pet's body overlaps the item — no tap-to-grab
+    if (Math.hypot(it.x - petCx, drawY - petCy) < it.r + catchR){
       walkCollect(s, it); s.items.splice(i, 1); continue;
     }
     mctx.font = `${it.r * 1.7}px serif`;
     mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
-    mctx.fillText(it.e, it.x, it.y + Math.sin(it.wob) * 4);
+    mctx.fillText(it.e, it.x, drawY);
   }
   mctx.textBaseline = 'alphabetic';
 }
@@ -1495,11 +1518,10 @@ function walkDrawPops(s, dt){
 
 function walkTap(x, y){
   const s = mgState; if (!s) return;
-  for (let i = s.items.length - 1; i >= 0; i--){
-    const it = s.items[i];
-    if (Math.hypot(it.x - x, it.y - y) < it.r + 18){
-      walkCollect(s, it); s.items.splice(i, 1); break;
-    }
+  // tap anywhere to jump — but only when grounded (no double-jump)
+  if (s.petAir > -2){
+    s.petVy = -1.5;
+    sfx('petkick');
   }
 }
 
