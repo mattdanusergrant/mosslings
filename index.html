@@ -1089,7 +1089,7 @@ function endGame(mode){
 // for a coin. Friction stops things eventually; objects bump each other.
 function startPush(){
   mgMode='push';
-  mgState={ objs:[], hole:null, score:0, time:30, last:performance.now(),
+  mgState={ objs:[], hole:null, pet:null, score:0, time:30, last:performance.now(),
     running:false, w:0, h:0, pops:[], drag:null, samples:[] };
   openMG();                                  // sizes the canvas → mgState.w/h
   layoutPush();
@@ -1102,26 +1102,38 @@ function startPush(){
 }
 function layoutPush(){
   const s=mgState, w=s.w, h=s.h, R=Math.min(w,h);
-  s.hole = { x: w*0.5, y: h*0.22, r: R*0.10 };
+  s.hole = { x: w*0.5, y: h*0.5, r: R*0.16 };
   const KINDS = [
-    { e:'🌰', size: R*0.045 },
-    { e:'🍂', size: R*0.052 },
-    { e:'🪨', size: R*0.055 },
-    { e:'🍄', size: R*0.048 },
-    { e:'🌿', size: R*0.052 },
-    { e:'🌰', size: R*0.045 },
+    { e:'🌰', size: R*0.048 },
+    { e:'🍂', size: R*0.055 },
+    { e:'🪨', size: R*0.058 },
+    { e:'🍄', size: R*0.050 },
+    { e:'🌿', size: R*0.055 },
+    { e:'🌰', size: R*0.048 },
   ];
+  // arrange the items in a loose ring around the hole
   s.objs = [];
-  for (let i=0; i<8; i++){
+  const n = 8;
+  const ringR = s.hole.r * 2.4;
+  const jitter = R * 0.06;
+  for (let i=0; i<n; i++){
     const k = KINDS[Math.floor(Math.random()*KINDS.length)];
-    let x, y, tries=0;
-    do {
-      x = w*(0.12 + Math.random()*0.76);
-      y = h*(0.45 + Math.random()*0.45);
-      tries++;
-    } while (Math.hypot(x-s.hole.x, y-s.hole.y) < s.hole.r*2.4 && tries<30);
+    const ang = (i/n) * Math.PI*2 + Math.random()*0.18;
+    const rr = ringR + (Math.random()-0.5) * jitter*2;
+    let x = s.hole.x + Math.cos(ang) * rr;
+    let y = s.hole.y + Math.sin(ang) * rr;
+    // keep inside the stage with a little padding
+    x = Math.max(k.size+8, Math.min(w-k.size-8, x));
+    y = Math.max(k.size+8, Math.min(h-k.size-8, y));
     s.objs.push({ x, y, vx:0, vy:0, r:k.size, e:k.e, sunk:false, dragging:false, fall:0 });
   }
+  // pet starts near a corner and toddles toward the nearest item
+  s.pet = {
+    x: w*0.18, y: h*0.85,
+    r: R*0.09,
+    vx: 0, vy: 0,
+    step: 0, target: null, retargetAt: 0
+  };
 }
 function pushDown(x, y){
   const s=mgState; if (!s) return false;
@@ -1214,6 +1226,11 @@ function pushFrame(ts){
     }
   }
 
+  // pet AI: chase the nearest non-sunk object that isn't being dragged;
+  // on contact, shove it toward the hole (only from the far side so the
+  // pet never accidentally knocks something out across the hole).
+  pushPetTick(s, dt);
+
   pushBG(w, h);
   // hole (top-down ellipse with subtle inner highlight)
   mctx.fillStyle = '#2a221c';
@@ -1253,23 +1270,104 @@ function pushBG(w, h){
     mctx.fillRect(x, y, 3, 8);
   }
 }
+function pushPetTick(s, dt){
+  const pet = s.pet; if (!pet) return;
+  // pick (or re-pick) a target: nearest unsunk object, avoiding ones the
+  // player is currently dragging or that are already past the rim.
+  pet.retargetAt -= dt;
+  const targetGone = !pet.target || pet.target.sunk || pet.target.dragging;
+  if (targetGone || pet.retargetAt <= 0){
+    let best = null, bestD = Infinity;
+    for (const o of s.objs){
+      if (o.sunk || o.dragging) continue;
+      const d = Math.hypot(o.x - pet.x, o.y - pet.y);
+      if (d < bestD){ bestD = d; best = o; }
+    }
+    pet.target = best;
+    pet.retargetAt = 700 + Math.random() * 500;
+  }
+  // walk toward an offset that puts the pet on the *opposite* side of the
+  // object from the hole, so the next bump will send it toward the hole.
+  let moveX = 0, moveY = 0;
+  if (pet.target){
+    const o = pet.target;
+    const hx = s.hole.x - o.x, hy = s.hole.y - o.y;
+    const hl = Math.hypot(hx, hy) || 1;
+    const standDist = o.r + pet.r * 0.9;
+    const gx = o.x - (hx / hl) * standDist;
+    const gy = o.y - (hy / hl) * standDist;
+    moveX = gx - pet.x; moveY = gy - pet.y;
+    const ml = Math.hypot(moveX, moveY);
+    if (ml > 1){
+      const speed = 0.16;                            // px/ms toddle
+      const k = Math.min(speed, ml / dt) / ml;
+      pet.vx = moveX * k; pet.vy = moveY * k;
+    } else {
+      pet.vx = 0; pet.vy = 0;
+    }
+  } else {
+    pet.vx *= 0.9; pet.vy *= 0.9;
+  }
+  pet.x += pet.vx * dt; pet.y += pet.vy * dt;
+  pet.x = Math.max(pet.r, Math.min(s.w - pet.r, pet.x));
+  pet.y = Math.max(pet.r, Math.min(s.h - pet.r, pet.y));
+  pet.step += dt * 0.01 * (Math.hypot(pet.vx, pet.vy) > 0.02 ? 1 : 0);
+
+  // bump objects the pet touches: push them away with a hole-biased nudge
+  for (const o of s.objs){
+    if (o.sunk || o.dragging) continue;
+    const dx = o.x - pet.x, dy = o.y - pet.y;
+    const d = Math.hypot(dx, dy);
+    const minD = o.r + pet.r;
+    if (d > 0 && d < minD){
+      const nx = dx / d, ny = dy / d;
+      const overlap = minD - d;
+      o.x += nx * overlap; o.y += ny * overlap;
+      // shove direction: blend "away from pet" with "toward hole" so the pet
+      // looks like it's actually trying to help.
+      const hx = s.hole.x - o.x, hy = s.hole.y - o.y;
+      const hl = Math.hypot(hx, hy) || 1;
+      const sx = nx * 0.35 + (hx / hl) * 0.65;
+      const sy = ny * 0.35 + (hy / hl) * 0.65;
+      const sl = Math.hypot(sx, sy) || 1;
+      const shove = 0.22;
+      o.vx += (sx / sl) * shove;
+      o.vy += (sy / sl) * shove;
+    }
+  }
+}
+
 function drawPushPet(s, ts){
-  if (!P) return;
+  if (!P || !s.pet) return;
   const sp = SPECIES[P.species];
-  const R = Math.min(s.w, s.h) * 0.10;
-  const x = R * 1.3, y = s.h - R * 1.2 + Math.sin(ts * 0.004) * 2;
-  mctx.fillStyle = 'rgba(0,0,0,.18)';
+  const pet = s.pet, R = pet.r;
+  const moving = Math.hypot(pet.vx, pet.vy) > 0.02;
+  const x = pet.x;
+  const y = pet.y + (moving ? Math.sin(pet.step * 2) * 2 : Math.sin(ts * 0.004) * 1.5);
+  mctx.fillStyle = 'rgba(0,0,0,.20)';
   mctx.beginPath(); mctx.ellipse(x, y + R*0.95, R*0.85, R*0.25, 0, 0, 7); mctx.fill();
   mctx.fillStyle = sp.body;
   mctx.beginPath(); mctx.ellipse(x, y, R*1.02, R*0.92, 0, 0, 7); mctx.fill();
   mctx.fillStyle = sp.belly;
   mctx.beginPath(); mctx.ellipse(x, y + R*0.18, R*0.6, R*0.5, 0, 0, 7); mctx.fill();
+  // feet bob when moving
+  const f1 = moving ? Math.sin(pet.step * 4) * 4 : 0;
+  mctx.fillStyle = sp.body;
+  mctx.beginPath(); mctx.ellipse(x - R*0.42, y + R*0.82 + f1,  R*0.22, R*0.16, 0, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.ellipse(x + R*0.42, y + R*0.82 - f1,  R*0.22, R*0.16, 0, 0, 7); mctx.fill();
+  // happy eyes
   mctx.strokeStyle = '#4a3b30'; mctx.lineWidth = R*0.07; mctx.lineCap = 'round';
   for (const sgn of [-1, 1]){
     mctx.beginPath();
     mctx.arc(x + sgn*R*0.34, y - R*0.03, R*0.17, 1.15*Math.PI, 1.85*Math.PI);
     mctx.stroke();
   }
+  // cheeks
+  mctx.fillStyle = sp.cheek; mctx.globalAlpha = 0.7;
+  mctx.beginPath(); mctx.arc(x - R*0.42, y + R*0.18, R*0.10, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.arc(x + R*0.42, y + R*0.18, R*0.10, 0, 7); mctx.fill();
+  mctx.globalAlpha = 1;
+  // little smile
   mctx.strokeStyle = '#7a4a44'; mctx.lineWidth = R*0.05;
   mctx.beginPath(); mctx.arc(x, y + R*0.30, R*0.16, 0.15*Math.PI, 0.85*Math.PI); mctx.stroke();
 }
