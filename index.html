@@ -227,6 +227,8 @@
           <div class="fn">Kick-a-Ball</div><div class="fsub">play together · big happiness</div></span></button>
         <button class="food" id="gFirefly"><span class="fe">🎣</span><span class="fmeta">
           <div class="fn">Firefly Catch</div><div class="fsub">tap fireflies · steady coins</div></span></button>
+        <button class="food" id="gPush"><span class="fe">🕳️</span><span class="fmeta">
+          <div class="fn">Hole-in-One</div><div class="fsub">flick acorns into the hole</div></span></button>
       </div>
       <button class="btn ghost" id="gamesClose">Close</button>
     </div>
@@ -885,6 +887,7 @@ function pickGame(){
 }
 $('gFirefly').onclick   = ()=>{ $('ovGames').classList.remove('show'); startFirefly(); };
 $('gKick').onclick      = ()=>{ $('ovGames').classList.remove('show'); startKick(); };
+$('gPush').onclick      = ()=>{ $('ovGames').classList.remove('show'); startPush(); };
 $('gamesClose').onclick = ()=>$('ovGames').classList.remove('show');
 
 function mgResize(){ const r=mg.getBoundingClientRect();
@@ -902,13 +905,16 @@ mgc.addEventListener('pointerdown', e=>{
   else if (mgMode==='kick') kickTap(x,y);
   else if (mgMode==='walk') walkTap(x,y);
   else if (mgMode==='feed'){ if (feedDown(x,y)) mgc.setPointerCapture(e.pointerId); }
+  else if (mgMode==='push'){ if (pushDown(x,y)) mgc.setPointerCapture(e.pointerId); }
 });
 mgc.addEventListener('pointermove', e=>{
-  if (mgMode!=='feed' || !mgState || !mgState.running) return;
-  const r=mgc.getBoundingClientRect(); feedMove(e.clientX-r.left, e.clientY-r.top);
+  if (!mgState || !mgState.running) return;
+  const r=mgc.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top;
+  if (mgMode==='feed') feedMove(x, y);
+  else if (mgMode==='push') pushMove(x, y);
 });
-mgc.addEventListener('pointerup',     ()=>{ if (mgMode==='feed') feedUp(); });
-mgc.addEventListener('pointercancel', ()=>{ if (mgMode==='feed') feedUp(); });
+mgc.addEventListener('pointerup',     ()=>{ if (mgMode==='feed') feedUp(); else if (mgMode==='push') pushUp(); });
+mgc.addEventListener('pointercancel', ()=>{ if (mgMode==='feed') feedUp(); else if (mgMode==='push') pushUp(); });
 
 // ---------- Firefly Catch ----------
 function startFirefly(){
@@ -1049,19 +1055,223 @@ function endGame(mode){
   mgState.running=false;
   const earned=mgState.score;
   S.coins += earned;
-  if(mode==='kick'){ P.happy=clamp(P.happy+Math.min(28,earned*2)); P.energy=clamp(P.energy-10); }
+  if (mode==='kick'){ P.happy=clamp(P.happy+Math.min(28,earned*2)); P.energy=clamp(P.energy-10); }
+  else if (mode==='push'){ P.happy=clamp(P.happy+Math.min(24,earned*3)); P.energy=clamp(P.energy-6); }
   else { P.happy=clamp(P.happy+Math.min(20,earned*1.5)); P.energy=clamp(P.energy-8); }
-  gainXP(mode==='kick' ? Math.max(3, Math.floor(earned/2)) : Math.max(2, Math.floor(earned/3)));
+  gainXP(mode==='kick' ? Math.max(3, Math.floor(earned/2))
+       : mode==='push' ? Math.max(2, earned)
+       : Math.max(2, Math.floor(earned/3)));
   if (earned>0) sfx('endgame');
   save(); refresh();
   $('mgmsg').style.display='flex';
-  const tail = mode==='kick'
-    ? `${P.name} chased every kick — ${earned>0?`+${earned} coins and a very happy heart.`:'still a lovely romp!'}`
-    : `${P.name} had a lovely time. ${earned>0?`+${earned} coins, and a happier heart.`:'Better luck next time!'}`;
-  $('mgmsg').innerHTML=`<h2>${mode==='kick'?'⚽':'🎣'} ${earned} 🪙</h2><p>${tail}</p>
+  let title, tail;
+  if (mode==='kick'){
+    title = `⚽ ${earned} 🪙`;
+    tail = `${P.name} chased every kick — ${earned>0?`+${earned} coins and a very happy heart.`:'still a lovely romp!'}`;
+  } else if (mode==='push'){
+    title = `🕳️ ${earned} 🪙`;
+    tail = `${P.name} watched ${earned} thing${earned===1?'':'s'} drop into the hole. ${earned>0?`+${earned} coins!`:'Better roll next time.'}`;
+  } else {
+    title = `🎣 ${earned} 🪙`;
+    tail = `${P.name} had a lovely time. ${earned>0?`+${earned} coins, and a happier heart.`:'Better luck next time!'}`;
+  }
+  $('mgmsg').innerHTML=`<h2>${title}</h2><p>${tail}</p>
     <button class="btn" id="mgAgain">Play again</button><button class="btn ghost" id="mgDone">Done</button>`;
-  $('mgAgain').onclick = mode==='kick' ? startKick : startFirefly;
+  $('mgAgain').onclick = mode==='kick' ? startKick : mode==='push' ? startPush : startFirefly;
   $('mgDone').onclick  = closeGame;
+}
+
+// ---------- Hole-in-One (push objects into a hole) ----------
+// Top-down meadow with a sunken hole near the top. A handful of scattered
+// trinkets (acorns, leaves, pebbles, mushrooms) sit around the field. Drag
+// any of them to fling it across the grass; flicks are damped and capped so
+// the path reads. When an object's center crosses the hole rim it drops in
+// for a coin. Friction stops things eventually; objects bump each other.
+function startPush(){
+  mgMode='push';
+  mgState={ objs:[], hole:null, score:0, time:30, last:performance.now(),
+    running:false, w:0, h:0, pops:[], drag:null, samples:[] };
+  openMG();                                  // sizes the canvas → mgState.w/h
+  layoutPush();
+  $('mgScore').textContent=0; $('mgTime').textContent=30;
+  $('mgmsg').innerHTML=`<h2>🕳️ Hole-in-One</h2>
+    <p>Flick the acorns, pebbles and leaves into the hole. ${P.name} will cheer!</p>
+    <button class="btn" id="mgStart">Start</button><button class="btn ghost" id="mgQuit">Maybe later</button>`;
+  $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); requestAnimationFrame(pushFrame); };
+  $('mgQuit').onclick=closeGame;
+}
+function layoutPush(){
+  const s=mgState, w=s.w, h=s.h, R=Math.min(w,h);
+  s.hole = { x: w*0.5, y: h*0.22, r: R*0.10 };
+  const KINDS = [
+    { e:'🌰', size: R*0.045 },
+    { e:'🍂', size: R*0.052 },
+    { e:'🪨', size: R*0.055 },
+    { e:'🍄', size: R*0.048 },
+    { e:'🌿', size: R*0.052 },
+    { e:'🌰', size: R*0.045 },
+  ];
+  s.objs = [];
+  for (let i=0; i<8; i++){
+    const k = KINDS[Math.floor(Math.random()*KINDS.length)];
+    let x, y, tries=0;
+    do {
+      x = w*(0.12 + Math.random()*0.76);
+      y = h*(0.45 + Math.random()*0.45);
+      tries++;
+    } while (Math.hypot(x-s.hole.x, y-s.hole.y) < s.hole.r*2.4 && tries<30);
+    s.objs.push({ x, y, vx:0, vy:0, r:k.size, e:k.e, sunk:false, dragging:false, fall:0 });
+  }
+}
+function pushDown(x, y){
+  const s=mgState; if (!s) return false;
+  for (const o of s.objs){
+    if (o.sunk) continue;
+    if (Math.hypot(o.x-x, o.y-y) < o.r + 28){
+      o.dragging = true; o.vx = 0; o.vy = 0;
+      s.drag = o; s.samples = [{ x, y, t: performance.now() }];
+      o.x = x; o.y = y;
+      return true;
+    }
+  }
+  return false;
+}
+function pushMove(x, y){
+  const s=mgState; if (!s || !s.drag) return;
+  const o=s.drag; o.x = x; o.y = y;
+  s.samples.push({ x, y, t: performance.now() });
+  if (s.samples.length > 6) s.samples.shift();
+}
+function pushUp(){
+  const s=mgState; if (!s || !s.drag) return;
+  const o=s.drag; o.dragging = false;
+  const a=s.samples[0], b=s.samples[s.samples.length-1];
+  if (a && b && b !== a){
+    const dt = Math.max(8, b.t - a.t);
+    const damp = 0.45;
+    let vx = (b.x - a.x) / dt * damp;
+    let vy = (b.y - a.y) / dt * damp;
+    const sp = Math.hypot(vx, vy), maxV = 1.6;
+    if (sp > maxV){ vx *= maxV/sp; vy *= maxV/sp; }
+    o.vx = vx; o.vy = vy;
+  } else { o.vx = 0; o.vy = 0; }
+  s.drag = null; s.samples = [];
+}
+function pushFrame(ts){
+  if (!mgState || !mgState.running) return;
+  const dt = Math.min(50, ts - mgState.last); mgState.last = ts;
+  const s = mgState, w = s.w, h = s.h;
+  s.time -= dt / 1000;
+  $('mgTime').textContent = Math.max(0, Math.ceil(s.time));
+  $('mgScore').textContent = s.score;
+
+  const friction = 0.0028;
+  for (const o of s.objs){
+    if (o.sunk || o.dragging) continue;
+    o.x += o.vx * dt; o.y += o.vy * dt;
+    if (o.x < o.r){ o.x = o.r; o.vx = -o.vx*0.6; }
+    if (o.x > w-o.r){ o.x = w-o.r; o.vx = -o.vx*0.6; }
+    if (o.y < o.r){ o.y = o.r; o.vy = -o.vy*0.6; }
+    if (o.y > h-o.r){ o.y = h-o.r; o.vy = -o.vy*0.6; }
+    const sp = Math.hypot(o.vx, o.vy);
+    if (sp > 0){
+      const dec = friction * dt;
+      if (sp > dec){ const k = (sp - dec) / sp; o.vx *= k; o.vy *= k; }
+      else { o.vx = 0; o.vy = 0; }
+    }
+    const dh = Math.hypot(o.x - s.hole.x, o.y - s.hole.y);
+    if (dh < s.hole.r - o.r*0.3){
+      o.sunk = true; o.fall = 1;
+      s.score++; S.coins++;
+      s.pops.push({ x:o.x, y:o.y, life:1, txt:'🪙' });
+      sfx('firefly');
+    } else if (dh < s.hole.r + o.r*0.5){
+      // a soft pull when grazing the rim — gives near-misses a sympathy nudge
+      const k = 0.0007 * dt;
+      o.vx += (s.hole.x - o.x) * k;
+      o.vy += (s.hole.y - o.y) * k;
+    }
+  }
+  // object–object collisions (no stacking)
+  for (let i=0; i<s.objs.length; i++){
+    const a = s.objs[i]; if (a.sunk) continue;
+    for (let j=i+1; j<s.objs.length; j++){
+      const b = s.objs[j]; if (b.sunk) continue;
+      const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+      const minD = a.r + b.r;
+      if (d > 0 && d < minD){
+        const nx = dx / d, ny = dy / d;
+        const overlap = (minD - d) * 0.5;
+        if (!a.dragging){ a.x -= nx * overlap; a.y -= ny * overlap; }
+        if (!b.dragging){ b.x += nx * overlap; b.y += ny * overlap; }
+        if (!a.dragging && !b.dragging){
+          const av = a.vx*nx + a.vy*ny;
+          const bv = b.vx*nx + b.vy*ny;
+          a.vx += (bv - av) * nx * 0.55; a.vy += (bv - av) * ny * 0.55;
+          b.vx += (av - bv) * nx * 0.55; b.vy += (av - bv) * ny * 0.55;
+        }
+      }
+    }
+  }
+
+  pushBG(w, h);
+  // hole (top-down ellipse with subtle inner highlight)
+  mctx.fillStyle = '#2a221c';
+  mctx.beginPath(); mctx.ellipse(s.hole.x, s.hole.y, s.hole.r, s.hole.r*0.55, 0, 0, 7); mctx.fill();
+  mctx.fillStyle = 'rgba(255,255,255,0.05)';
+  mctx.beginPath(); mctx.ellipse(s.hole.x, s.hole.y - s.hole.r*0.18, s.hole.r*0.6, s.hole.r*0.20, 0, 0, 7); mctx.fill();
+  // objects
+  mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+  for (const o of s.objs){
+    if (o.sunk) continue;
+    mctx.fillStyle = 'rgba(0,0,0,.22)';
+    mctx.beginPath(); mctx.ellipse(o.x, o.y + o.r*0.85, o.r*0.85, o.r*0.25, 0, 0, 7); mctx.fill();
+    mctx.font = `${o.r*2.2}px serif`;
+    mctx.fillText(o.e, o.x, o.y);
+  }
+  mctx.textBaseline = 'alphabetic';
+
+  drawPushPet(s, ts);
+
+  for (let i=s.pops.length-1; i>=0; i--){
+    const o = s.pops[i]; o.y -= 0.04 * dt; o.life -= dt * 0.0016;
+    if (o.life <= 0){ s.pops.splice(i, 1); continue; }
+    mctx.globalAlpha = o.life; mctx.font = '22px serif'; mctx.textAlign = 'center';
+    mctx.fillText(o.txt, o.x, o.y); mctx.globalAlpha = 1;
+  }
+
+  if (s.time <= 0){ endGame('push'); return; }
+  requestAnimationFrame(pushFrame);
+}
+function pushBG(w, h){
+  const g = mctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#cce8a8'); g.addColorStop(1, '#9fcf86');
+  mctx.fillStyle = g; mctx.fillRect(0, 0, w, h);
+  mctx.fillStyle = 'rgba(120,160,90,.35)';
+  for (let i = 0; i < 22; i++){
+    const x = (i * 73) % w, y = (i * 113) % h;
+    mctx.fillRect(x, y, 3, 8);
+  }
+}
+function drawPushPet(s, ts){
+  if (!P) return;
+  const sp = SPECIES[P.species];
+  const R = Math.min(s.w, s.h) * 0.10;
+  const x = R * 1.3, y = s.h - R * 1.2 + Math.sin(ts * 0.004) * 2;
+  mctx.fillStyle = 'rgba(0,0,0,.18)';
+  mctx.beginPath(); mctx.ellipse(x, y + R*0.95, R*0.85, R*0.25, 0, 0, 7); mctx.fill();
+  mctx.fillStyle = sp.body;
+  mctx.beginPath(); mctx.ellipse(x, y, R*1.02, R*0.92, 0, 0, 7); mctx.fill();
+  mctx.fillStyle = sp.belly;
+  mctx.beginPath(); mctx.ellipse(x, y + R*0.18, R*0.6, R*0.5, 0, 0, 7); mctx.fill();
+  mctx.strokeStyle = '#4a3b30'; mctx.lineWidth = R*0.07; mctx.lineCap = 'round';
+  for (const sgn of [-1, 1]){
+    mctx.beginPath();
+    mctx.arc(x + sgn*R*0.34, y - R*0.03, R*0.17, 1.15*Math.PI, 1.85*Math.PI);
+    mctx.stroke();
+  }
+  mctx.strokeStyle = '#7a4a44'; mctx.lineWidth = R*0.05;
+  mctx.beginPath(); mctx.arc(x, y + R*0.30, R*0.16, 0.15*Math.PI, 0.85*Math.PI); mctx.stroke();
 }
 
 // ---------- Feed (flick from plate to pet) ----------
