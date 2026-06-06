@@ -512,6 +512,7 @@ function mood(){
 // ===================== RENDER (scene) =====================
 const cv = $('c'), ctx = cv.getContext('2d');
 let DPR=1, W=0, H=0;
+let petCYRatio = 0.58;     // 0.58 = home; eases to 0.48 when feedTray active
 function resize(){
   DPR = Math.min(2, window.devicePixelRatio||1);
   const r = $('scene').getBoundingClientRect();
@@ -558,7 +559,9 @@ function frame(ts){
   }
 
   drawRoom(A);
-  const cx = W/2, cy = H*0.58;
+  const cx = W/2;
+  petCYRatio += ((feedTray ? 0.48 : 0.58) - petCYRatio) * 0.08;
+  const cy = H * petCYRatio;
   drawCreature(cx, cy, ts);
   drawZ(cx, cy, ts);
   trayTick(dt);
@@ -1321,7 +1324,7 @@ let feedTray = null;
 
 function petPos(){
   const R = Math.min(W, H) * 0.20;
-  const cy = H * 0.58;
+  const cy = H * petCYRatio;
   return { x: W/2, y: cy, r: R, mouthY: cy + R*0.26 };
 }
 
@@ -1373,12 +1376,12 @@ function trayRelease(){
     const dt = Math.max(8, b.t - a.t);
     // Damp the raw flick + cap top speed so the arc is always readable.
     // Without this, pointer velocities are so high the food teleports to the
-    // pet in one frame. damp=0.4 keeps "typical" flicks effective; maxV=1.5
-    // means the strongest flick still takes ~10 frames to cross to the pet.
+    // pet in one frame. damp=0.4 keeps "typical" flicks effective; maxV=1.3
+    // means the strongest flick takes ~16 frames to cross to the pet.
     const damp = 0.4;
     let vx = (b.x - a.x) / dt * damp;
     let vy = (b.y - a.y) / dt * damp;
-    const speed = Math.hypot(vx, vy), maxV = 1.5;
+    const speed = Math.hypot(vx, vy), maxV = 1.3;
     if (speed > maxV){ vx *= maxV/speed; vy *= maxV/speed; }
     m.vx = vx; m.vy = vy;
   } else { m.vx = 0; m.vy = 0; }
@@ -1393,7 +1396,7 @@ function trayTick(dt){
     const m = feedTray.morsels[i];
     if (m.dragging || m.settled) continue;
     const px = m.x, py = m.y;
-    m.vy += 0.0020 * dt;                                     // gravity (a bit stronger so the arc reads)
+    m.vy += 0.0030 * dt;                                     // gravity (a bit stronger so the arc reads)
     m.x += m.vx * dt; m.y += m.vy * dt;
     if (m.x < m.r){ m.x = m.r; m.vx = Math.abs(m.vx)*0.7; }
     if (m.x > W-m.r){ m.x = W-m.r; m.vx = -Math.abs(m.vx)*0.7; }
@@ -1417,7 +1420,7 @@ function trayTick(dt){
     const restY = plate.y - m.r * 0.5;
     if (m.y > restY){
       m.y = restY;
-      if (Math.abs(m.vy) > 0.08){ m.vy = -m.vy * 0.45; m.vx *= 0.7; m.tasty = false; }
+      if (Math.abs(m.vy) > 0.08){ m.vy = -m.vy * 0.30; m.vx *= 0.5; m.tasty = false; }
       else { m.vx = 0; m.vy = 0; m.settled = true; m.x = m.restX; m.tasty = false; }
     }
   }
