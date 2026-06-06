@@ -308,6 +308,7 @@ const DECAY = { full: 7, happy: 4.5, energyAwake: 5.5, energyAsleep: -22 };
 const MAX_CATCHUP_H = 36;     // cap offline simulation so it never feels punishing
 const TIRED_SLEEP_AT = 15;    // pet auto-naps when energy crosses this threshold
 const SLEEP_DECAY_MULT = 0.35;// hunger/happy decay much slower while asleep — sleep restores
+const FULL_REFUSE = 92;       // at or above this fullness, the pet refuses food
 
 // ===================== STATE SHAPE (v2) =====================
 // S = { pets: [...], currentId, coins, lastVisitDay, streak }
@@ -446,24 +447,71 @@ function sfx(kind){
   }
 }
 
-// gentle ambient pad — two soft sine voices, low volume, retuned by time-of-day
+// gentle ambient — slow chord progression + soft pentatonic arpeggio. The
+// pad uses three sine voices retuned every ~6.5s; a triangle voice on top
+// drops a pentatonic note every ~1.7s (sometimes a rest). Day is C major
+// (I-vi-IV-V); night is A minor (vi-IV-I-V). All voices share the master
+// gain so muting silences everything.
 function startAmbient(){
   const ctx = ensureAudio(); if (!ctx || SND.muted || SND.amb) return;
   const hr = new Date().getHours(), night = hr<6 || hr>=20;
-  const root = night ? 220 : 261.63;                     // A3 at night, C4 in day
-  const fifth = root * 1.5;
-  const make = (f)=>{ const o=ctx.createOscillator(); o.type='sine'; o.frequency.value=f;
-    const g=ctx.createGain(); g.gain.value=0; o.connect(g); g.connect(SND.master);
-    g.gain.linearRampToValueAtTime(0.04, ctx.currentTime+2); o.start(); return {o,g}; };
-  SND.amb = { a: make(root), b: make(fifth) };
+  // Chord roots/thirds/fifths (Hz)
+  const dayChords   = [[131,165,196],[110,131,165],[87,110,131],[98,123,147]]; // C, Am, F, G
+  const nightChords = [[110,131,165],[87,110,131],[131,165,196],[98,123,147]]; // Am, F, C, G
+  const dayPent     = [262, 294, 330, 392, 440, 523, 587, 659];
+  const nightPent   = [220, 262, 294, 330, 392, 440, 523, 587];
+  const chords = night ? nightChords : dayChords;
+  const pent   = night ? nightPent   : dayPent;
+
+  const padGain = ctx.createGain();
+  padGain.gain.value = 0;
+  padGain.connect(SND.master);
+  const padVoices = [0,0,0].map(()=>{
+    const o = ctx.createOscillator(); o.type='sine';
+    const g = ctx.createGain(); g.gain.value = 0.30;
+    o.connect(g); g.connect(padGain);
+    o.start();
+    return { o, g };
+  });
+  padGain.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 3);
+
+  function setChord(c){
+    const t = ctx.currentTime;
+    for (let i = 0; i < 3; i++){
+      padVoices[i].o.frequency.cancelScheduledValues(t);
+      padVoices[i].o.frequency.linearRampToValueAtTime(c[i], t + 1.4);
+    }
+  }
+  let chordIdx = 0; setChord(chords[0]);
+  const chordTimer = setInterval(()=>{
+    chordIdx = (chordIdx + 1) % chords.length;
+    setChord(chords[chordIdx]);
+  }, 6500);
+
+  // melody — triangle bell with soft attack/long decay
+  function arpNote(){
+    if (Math.random() < 0.25) return;            // breathing room
+    const f = pent[Math.floor(Math.random() * pent.length)];
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type='triangle'; o.frequency.value = f;
+    const g = ctx.createGain(); g.gain.value = 0;
+    o.connect(g); g.connect(SND.master);
+    g.gain.linearRampToValueAtTime(0.04, t + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    o.start(t); o.stop(t + 1.5);
+  }
+  const arpTimer = setInterval(arpNote, 1700);
+
+  SND.amb = { padGain, padVoices, chordTimer, arpTimer };
 }
 function stopAmbient(){
   if (!SND.amb) return;
   const ctx = SND.ctx, t = ctx.currentTime;
-  for (const v of [SND.amb.a, SND.amb.b]){
-    v.g.gain.cancelScheduledValues(t); v.g.gain.linearRampToValueAtTime(0, t+0.4);
-    v.o.stop(t+0.5);
-  }
+  clearInterval(SND.amb.chordTimer);
+  clearInterval(SND.amb.arpTimer);
+  SND.amb.padGain.gain.cancelScheduledValues(t);
+  SND.amb.padGain.gain.linearRampToValueAtTime(0, t + 0.5);
+  for (const v of SND.amb.padVoices){ v.o.stop(t + 0.6); }
   SND.amb = null;
 }
 
@@ -790,11 +838,15 @@ function openFeed(){
   if (!P) return;
   if (P.asleep){ toast('they are asleep — wake them first'); return; }
   if (feedTray){ toast(`still some ${feedTray.food.n} on the plate`); return; }
+  if (P.full >= FULL_REFUSE){
+    toast(`${P.name} is too full to eat right now`);
+    return;
+  }
   const list=$('foodList'); list.innerHTML='';
-  $('feedSub').textContent = P.full>=98 ? `${P.name} is completely full!` : 'A little something to fill the tummy.';
+  $('feedSub').textContent = P.full>=80 ? `${P.name} is getting full…` : 'A little something to fill the tummy.';
   for(const f of FOODS){
     const b=document.createElement('button'); b.className='food';
-    const afford = S.coins>=f.cost && P.full<100;
+    const afford = S.coins>=f.cost && P.full<FULL_REFUSE;
     b.disabled=!afford;
     b.innerHTML=`<span class="fe">${f.e}</span><span class="fmeta"><div class="fn">${f.n}</div>
       <div class="fsub">${f.sub}</div></span><span class="cost"><span class="c"></span>${f.cost}</span>`;
@@ -848,6 +900,7 @@ mgc.addEventListener('pointerdown', e=>{
   const r=mgc.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top;
   if (mgMode==='firefly') fireflyTap(x,y);
   else if (mgMode==='kick') kickTap(x,y);
+  else if (mgMode==='walk') walkTap(x,y);
   else if (mgMode==='feed'){ if (feedDown(x,y)) mgc.setPointerCapture(e.pointerId); }
 });
 mgc.addEventListener('pointermove', e=>{
@@ -1256,15 +1309,224 @@ function visitPlace(pl){
   if (!P) return;
   P.lastVisits = P.lastVisits || {};
   P.lastVisits[pl.id] = now();
-  const r = pl.visit();
-  gainXP(r.xp || 0);
-  sfx(r.coins ? 'firefly' : 'cuddle');
-  save(); refresh();
+  save();
   $('ovExplore').classList.remove('show');
-  const bits = [r.msg];
-  if (r.coins) bits.push(`+${r.coins} 🪙`);
-  bits.push(`+${r.xp} XP`);
-  toast(bits.join(' · '));
+  startWalk(pl);
+}
+
+// ===================== WALK — side-scrolling explore =====================
+// A short stroll through the chosen place. The pet walks in from the left,
+// the world parallax-scrolls past, and tappable trinkets drift by. Items
+// the pet passes through are auto-collected; the player can also tap any
+// item to grab it early. After the walk we still grant the place's
+// intrinsic reward (so a Pond walk still gets the "watched the stars"
+// bonus) plus a per-item bonus from the walk itself.
+const WALK_SCENES = {
+  meadow: { sky:['#cfe9f3','#fcebc6'], hill:'#bcd99b', ground:'#c1d68d', items:['🌼','🌿','🌸','🦋'] },
+  wood:   { sky:['#b6d0b0','#dcc9a0'], hill:'#7d9968', ground:'#a98f6a', items:['🍂','🌰','🪺','🐿'] },
+  pond:   { sky:['#1a1f3a','#3a3458'], hill:'#2c3a5e', ground:'#3b4a6c', items:['✨','⭐','🌙','🐟'], night:true },
+  grove:  { sky:['#d6c8e0','#e9c5a8'], hill:'#9a83a8', ground:'#8a7090', items:['🍄','🌿','🦋','🌺'] },
+};
+
+function startWalk(pl){
+  if (!P) return;
+  mgMode = 'walk';
+  const scene = WALK_SCENES[pl.id] || WALK_SCENES.meadow;
+  mgState = {
+    place: pl, scene,
+    time: 14, last: performance.now(), running: false,
+    w: 0, h: 0,
+    petX: -120, step: 0,
+    items: [], pops: [], spawnT: 600,
+    collected: 0, coinsEarned: 0,
+    bgScroll: 0,
+  };
+  openMG();
+  $('mgScore').textContent = 0;
+  $('mgTime').textContent = 14;
+  $('mgmsg').innerHTML = `<h2>${pl.e} ${pl.n} walk</h2>
+    <p>${P.name} will stroll through. Tap things you'd like them to keep — anything they walk past will join them too.</p>
+    <button class="btn" id="mgStart">Let's go</button>
+    <button class="btn ghost" id="mgQuit">Maybe later</button>`;
+  $('mgStart').onclick = ()=>{
+    $('mgmsg').style.display='none';
+    mgState.running = true;
+    mgState.last = performance.now();
+    requestAnimationFrame(walkFrame);
+  };
+  $('mgQuit').onclick = ()=>{
+    // walk skipped — refund the cooldown
+    if (P.lastVisits && P.lastVisits[pl.id]) delete P.lastVisits[pl.id];
+    save(); closeGame();
+  };
+}
+
+function walkFrame(ts){
+  if (!mgState || !mgState.running) return;
+  const dt = Math.min(50, ts - mgState.last); mgState.last = ts;
+  const s = mgState;
+  s.time -= dt / 1000;
+  $('mgTime').textContent = Math.max(0, Math.ceil(s.time));
+  $('mgScore').textContent = s.collected;
+
+  // pet eases in from left, then walks in place while world scrolls
+  const targetX = s.w * 0.32;
+  s.petX += (targetX - s.petX) * 0.04;
+  s.step += dt * 0.008;
+  s.bgScroll += dt * 0.12;
+
+  s.spawnT -= dt;
+  if (s.spawnT <= 0){
+    s.spawnT = 800 + Math.random() * 700;
+    const items = s.scene.items;
+    s.items.push({
+      x: s.w + 40,
+      y: s.h * (0.50 + Math.random() * 0.22),
+      r: 22,
+      e: items[Math.floor(Math.random() * items.length)],
+      vx: -0.14 - Math.random() * 0.05,
+      wob: Math.random() * 6.28,
+    });
+  }
+
+  walkDrawBG(s, ts);
+  walkDrawItems(s, dt);
+  walkDrawPet(s, ts);
+  walkDrawPops(s, dt);
+
+  if (s.time <= 0){ endWalk(); return; }
+  requestAnimationFrame(walkFrame);
+}
+
+function walkDrawBG(s, ts){
+  const sky = mctx.createLinearGradient(0, 0, 0, s.h);
+  sky.addColorStop(0, s.scene.sky[0]); sky.addColorStop(1, s.scene.sky[1]);
+  mctx.fillStyle = sky; mctx.fillRect(0, 0, s.w, s.h);
+  if (s.scene.night){
+    mctx.fillStyle = '#fff';
+    for (let i = 0; i < 36; i++){
+      const x = ((i * 73 - s.bgScroll * 0.2) % s.w + s.w) % s.w;
+      const y = (i * 47) % (s.h * 0.5);
+      mctx.globalAlpha = 0.4 + 0.4 * Math.sin(ts * 0.002 + i);
+      mctx.fillRect(x, y, 2, 2);
+    }
+    mctx.globalAlpha = 1;
+  }
+  // hills
+  const hillsY = s.h * 0.62;
+  mctx.fillStyle = s.scene.hill;
+  for (let i = -1; i < 7; i++){
+    const x = ((i * 180 - s.bgScroll * 0.5) % (s.w + 360) + s.w + 360) % (s.w + 360) - 180;
+    mctx.beginPath();
+    mctx.arc(x, hillsY + 30, 100, Math.PI, 2 * Math.PI); mctx.fill();
+  }
+  // ground band
+  mctx.fillStyle = s.scene.ground;
+  mctx.fillRect(0, s.h * 0.78, s.w, s.h);
+  // motion stripes
+  mctx.fillStyle = 'rgba(0,0,0,.10)';
+  for (let i = 0; i < 10; i++){
+    const x = ((i * 90 - s.bgScroll) % (s.w + 90) + s.w + 90) % (s.w + 90) - 45;
+    mctx.fillRect(x, s.h * 0.88, 40, 4);
+  }
+}
+
+function walkDrawPet(s, ts){
+  if (!P) return;
+  const sp = SPECIES[P.species];
+  const R = Math.min(s.w, s.h) * 0.12;
+  const x = s.petX;
+  const y = s.h * 0.78 - R * 0.55 + Math.sin(s.step * 2) * 3;
+  // shadow
+  mctx.fillStyle = 'rgba(0,0,0,.20)';
+  mctx.beginPath(); mctx.ellipse(x, y + R * 0.95, R * 0.85, R * 0.28, 0, 0, 7); mctx.fill();
+  // body
+  mctx.fillStyle = sp.body;
+  mctx.beginPath(); mctx.ellipse(x, y, R * 1.02, R * 0.92, 0, 0, 7); mctx.fill();
+  mctx.fillStyle = sp.belly;
+  mctx.beginPath(); mctx.ellipse(x, y + R * 0.18, R * 0.6, R * 0.5, 0, 0, 7); mctx.fill();
+  // alternating feet
+  const f1 = Math.sin(s.step * 4) * 4, f2 = -f1;
+  mctx.fillStyle = sp.body;
+  mctx.beginPath(); mctx.ellipse(x - R * 0.42, y + R * 0.82 + f1, R * 0.22, R * 0.16, 0, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.ellipse(x + R * 0.42, y + R * 0.82 + f2, R * 0.22, R * 0.16, 0, 0, 7); mctx.fill();
+  // happy eyes
+  mctx.strokeStyle = '#4a3b30'; mctx.lineWidth = R * 0.07; mctx.lineCap = 'round';
+  for (const sgn of [-1, 1]){
+    mctx.beginPath();
+    mctx.arc(x + sgn * R * 0.34, y - R * 0.03, R * 0.17, 1.15 * Math.PI, 1.85 * Math.PI);
+    mctx.stroke();
+  }
+  // cheeks
+  mctx.fillStyle = sp.cheek; mctx.globalAlpha = 0.7;
+  mctx.beginPath(); mctx.arc(x - R * 0.42, y + R * 0.18, R * 0.10, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.arc(x + R * 0.42, y + R * 0.18, R * 0.10, 0, 7); mctx.fill();
+  mctx.globalAlpha = 1;
+}
+
+function walkDrawItems(s, dt){
+  for (let i = s.items.length - 1; i >= 0; i--){
+    const it = s.items[i];
+    it.x += it.vx * dt;
+    it.wob += 0.05;
+    if (it.x < -60){ s.items.splice(i, 1); continue; }
+    // auto-collect when pet passes through
+    if (Math.abs(it.x - s.petX) < 36 && Math.abs(it.y - s.h * 0.72) < 70){
+      walkCollect(s, it); s.items.splice(i, 1); continue;
+    }
+    mctx.font = `${it.r * 1.7}px serif`;
+    mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+    mctx.fillText(it.e, it.x, it.y + Math.sin(it.wob) * 4);
+  }
+  mctx.textBaseline = 'alphabetic';
+}
+
+function walkDrawPops(s, dt){
+  for (let i = s.pops.length - 1; i >= 0; i--){
+    const o = s.pops[i];
+    o.y -= dt * 0.04;
+    o.life -= dt * 0.0018;
+    if (o.life <= 0){ s.pops.splice(i, 1); continue; }
+    mctx.globalAlpha = Math.max(0, o.life);
+    mctx.font = '24px serif'; mctx.textAlign = 'center'; mctx.fillText('✨', o.x, o.y);
+    mctx.globalAlpha = 1;
+  }
+}
+
+function walkTap(x, y){
+  const s = mgState; if (!s) return;
+  for (let i = s.items.length - 1; i >= 0; i--){
+    const it = s.items[i];
+    if (Math.hypot(it.x - x, it.y - y) < it.r + 18){
+      walkCollect(s, it); s.items.splice(i, 1); break;
+    }
+  }
+}
+
+function walkCollect(s, it){
+  s.collected++;
+  s.pops.push({ x: it.x, y: it.y, life: 1 });
+  if (Math.random() < 0.45){ s.coinsEarned++; S.coins++; }
+  sfx('firefly');
+}
+
+function endWalk(){
+  const s = mgState; if (!s) return;
+  s.running = false;
+  const pl = s.place;
+  const r = pl.visit ? pl.visit() : { xp: 3, msg: `${P.name} enjoyed the walk` };
+  const totalXP    = (r.xp || 0) + s.collected;
+  const totalCoins = (r.coins || 0) + s.coinsEarned;
+  P.happy = clamp(P.happy + Math.min(10, 2 + s.collected));
+  gainXP(totalXP);
+  save(); refresh();
+  $('mgmsg').style.display = 'flex';
+  const coinsLine = totalCoins ? `<br>+${totalCoins} 🪙` : '';
+  $('mgmsg').innerHTML = `<h2>Home again ✨</h2>
+    <p>${r.msg}.<br>Brought back ${s.collected} little thing${s.collected===1?'':'s'} from the walk.</p>
+    <p>+${totalXP} XP${coinsLine}</p>
+    <button class="btn" id="mgDone">Done</button>`;
+  $('mgDone').onclick = closeGame;
 }
 
 // ===================== PET PROFILE & ROSTER =====================
@@ -1406,6 +1668,17 @@ function trayTick(dt){
       const vx = m.x - px, vy = m.y - py, ux = pet.x - px, uy = pet.mouthY - py;
       const tt = Math.max(0, Math.min(1, (ux*vx + uy*vy) / ((vx*vx + vy*vy) || 1)));
       if (Math.hypot(px + tt*vx - pet.x, py + tt*vy - pet.mouthY) < pet.r * 0.55){
+        if (P.full >= FULL_REFUSE){
+          // refuse — bounce the morsel away from the pet's body
+          m.vy = -Math.abs(m.vy) * 0.5 - 0.25;
+          m.vx = (m.x < pet.x ? -1 : 1) * (Math.abs(m.vx) * 0.5 + 0.15);
+          m.tasty = false;
+          if (!feedTray._refused){
+            feedTray._refused = true;
+            toast(`${P.name} is too full!`);
+          }
+          continue;
+        }
         P.full = clamp(P.full + f.fill / n);
         P.happy = clamp(P.happy + f.joy / n + (m.tasty ? 1 : 0));
         sfx('feed');
