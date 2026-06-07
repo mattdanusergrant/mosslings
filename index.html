@@ -1095,7 +1095,7 @@ function startPush(){
   layoutPush();
   $('mgScore').textContent=0; $('mgTime').textContent=30;
   $('mgmsg').innerHTML=`<h2>🕳️ Hole-in-One</h2>
-    <p>Flick the acorns, pebbles and leaves into the hole. ${P.name} will cheer!</p>
+    <p>Flick the acorns, pebbles and leaves into the hole. Heavy little things — and ${P.name} keeps trying to bat them back out!</p>
     <button class="btn" id="mgStart">Start</button><button class="btn ghost" id="mgQuit">Maybe later</button>`;
   $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); requestAnimationFrame(pushFrame); };
   $('mgQuit').onclick=closeGame;
@@ -1160,10 +1160,10 @@ function pushUp(){
   const a=s.samples[0], b=s.samples[s.samples.length-1];
   if (a && b && b !== a){
     const dt = Math.max(8, b.t - a.t);
-    const damp = 0.45;
+    const damp = 0.22;             // heavier feel: halved flick translation
     let vx = (b.x - a.x) / dt * damp;
     let vy = (b.y - a.y) / dt * damp;
-    const sp = Math.hypot(vx, vy), maxV = 1.6;
+    const sp = Math.hypot(vx, vy), maxV = 0.85;
     if (sp > maxV){ vx *= maxV/sp; vy *= maxV/sp; }
     o.vx = vx; o.vy = vy;
   } else { o.vx = 0; o.vy = 0; }
@@ -1287,15 +1287,16 @@ function pushPetTick(s, dt){
     pet.retargetAt = 700 + Math.random() * 500;
   }
   // walk toward an offset that puts the pet on the *opposite* side of the
-  // object from the hole, so the next bump will send it toward the hole.
+  // object from the pet's destination — for the meddling pet, that's the
+  // SAME side as the hole, so a bump sends the object AWAY from the hole.
   let moveX = 0, moveY = 0;
   if (pet.target){
     const o = pet.target;
     const hx = s.hole.x - o.x, hy = s.hole.y - o.y;
     const hl = Math.hypot(hx, hy) || 1;
     const standDist = o.r + pet.r * 0.9;
-    const gx = o.x - (hx / hl) * standDist;
-    const gy = o.y - (hy / hl) * standDist;
+    const gx = o.x + (hx / hl) * standDist;      // hole-side of the object
+    const gy = o.y + (hy / hl) * standDist;
     moveX = gx - pet.x; moveY = gy - pet.y;
     const ml = Math.hypot(moveX, moveY);
     if (ml > 1){
@@ -1323,14 +1324,14 @@ function pushPetTick(s, dt){
       const nx = dx / d, ny = dy / d;
       const overlap = minD - d;
       o.x += nx * overlap; o.y += ny * overlap;
-      // shove direction: blend "away from pet" with "toward hole" so the pet
-      // looks like it's actually trying to help.
-      const hx = s.hole.x - o.x, hy = s.hole.y - o.y;
+      // shove direction: blend "away from pet" with "away from the hole" so
+      // the pet is actively meddling — every bump sends the object outward.
+      const hx = o.x - s.hole.x, hy = o.y - s.hole.y;       // away-from-hole
       const hl = Math.hypot(hx, hy) || 1;
       const sx = nx * 0.35 + (hx / hl) * 0.65;
       const sy = ny * 0.35 + (hy / hl) * 0.65;
       const sl = Math.hypot(sx, sy) || 1;
-      const shove = 0.11;     // halved — heavier items take more nudging
+      const shove = 0.14;     // a bit more oomph so meddling actually meddles
       o.vx += (sx / sl) * shove;
       o.vy += (sy / sl) * shove;
     }
