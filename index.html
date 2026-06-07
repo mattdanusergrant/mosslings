@@ -1140,9 +1140,11 @@ function pushDown(x, y){
   for (const o of s.objs){
     if (o.sunk) continue;
     if (Math.hypot(o.x-x, o.y-y) < o.r + 28){
+      // grab — but the object doesn't snap to the finger; instead it lags
+      // behind a "drag target" that the finger steers. Heavy crate feel.
       o.dragging = true; o.vx = 0; o.vy = 0;
+      o.gx = o.x; o.gy = o.y;
       s.drag = o; s.samples = [{ x, y, t: performance.now() }];
-      o.x = x; o.y = y;
       return true;
     }
   }
@@ -1150,7 +1152,8 @@ function pushDown(x, y){
 }
 function pushMove(x, y){
   const s=mgState; if (!s || !s.drag) return;
-  const o=s.drag; o.x = x; o.y = y;
+  const o=s.drag;
+  o.gx = x; o.gy = y;          // finger position — object eases toward it
   s.samples.push({ x, y, t: performance.now() });
   if (s.samples.length > 6) s.samples.shift();
 }
@@ -1178,8 +1181,21 @@ function pushFrame(ts){
   $('mgScore').textContent = s.score;
 
   const friction = 0.0056;       // 2× drag — items feel heavier
+  // dragged objects don't snap to the finger — they trundle toward it,
+  // capped at a heavy "you're hauling this" speed.
+  const dragMaxStep = 0.12 * dt;          // px/ms speed cap while held
   for (const o of s.objs){
-    if (o.sunk || o.dragging) continue;
+    if (o.sunk) continue;
+    if (o.dragging){
+      const dx = (o.gx ?? o.x) - o.x, dy = (o.gy ?? o.y) - o.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 0.001){
+        const step = Math.min(d, dragMaxStep);
+        o.x += dx / d * step;
+        o.y += dy / d * step;
+      }
+      continue;
+    }
     o.x += o.vx * dt; o.y += o.vy * dt;
     if (o.x < o.r){ o.x = o.r; o.vx = -o.vx*0.6; }
     if (o.x > w-o.r){ o.x = w-o.r; o.vx = -o.vx*0.6; }
