@@ -1177,7 +1177,7 @@ function pushFrame(ts){
   $('mgTime').textContent = Math.max(0, Math.ceil(s.time));
   $('mgScore').textContent = s.score;
 
-  const friction = 0.0028;
+  const friction = 0.0056;       // 2× drag — items feel heavier
   for (const o of s.objs){
     if (o.sunk || o.dragging) continue;
     o.x += o.vx * dt; o.y += o.vy * dt;
@@ -1299,7 +1299,7 @@ function pushPetTick(s, dt){
     moveX = gx - pet.x; moveY = gy - pet.y;
     const ml = Math.hypot(moveX, moveY);
     if (ml > 1){
-      const speed = 0.16;                            // px/ms toddle
+      const speed = 0.08;                            // px/ms toddle (half speed)
       const k = Math.min(speed, ml / dt) / ml;
       pet.vx = moveX * k; pet.vy = moveY * k;
     } else {
@@ -1330,7 +1330,7 @@ function pushPetTick(s, dt){
       const sx = nx * 0.35 + (hx / hl) * 0.65;
       const sy = ny * 0.35 + (hy / hl) * 0.65;
       const sl = Math.hypot(sx, sy) || 1;
-      const shove = 0.22;
+      const shove = 0.11;     // halved — heavier items take more nudging
       o.vx += (sx / sl) * shove;
       o.vy += (sy / sl) * shove;
     }
