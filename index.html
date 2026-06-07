@@ -1160,10 +1160,10 @@ function pushUp(){
   const a=s.samples[0], b=s.samples[s.samples.length-1];
   if (a && b && b !== a){
     const dt = Math.max(8, b.t - a.t);
-    const damp = 0.22;             // heavier feel: halved flick translation
+    const damp = 0.022;            // 10× harder for the player to move
     let vx = (b.x - a.x) / dt * damp;
     let vy = (b.y - a.y) / dt * damp;
-    const sp = Math.hypot(vx, vy), maxV = 0.85;
+    const sp = Math.hypot(vx, vy), maxV = 0.085;
     if (sp > maxV){ vx *= maxV/sp; vy *= maxV/sp; }
     o.vx = vx; o.vy = vy;
   } else { o.vx = 0; o.vy = 0; }
@@ -1273,13 +1273,18 @@ function pushBG(w, h){
 function pushPetTick(s, dt){
   const pet = s.pet; if (!pet) return;
   // pick (or re-pick) a target: nearest unsunk object, avoiding ones the
-  // player is currently dragging or that are already past the rim.
+  // player is currently dragging or pets the pet has already shoved into a
+  // corner. "Cornered" = the object's center is within cornerDist of any
+  // canvas edge — the pet abandons it and goes after a fresher one.
   pet.retargetAt -= dt;
-  const targetGone = !pet.target || pet.target.sunk || pet.target.dragging;
+  const cornerDist = Math.min(s.w, s.h) * 0.14;
+  const cornered = (o) => o && (o.x < cornerDist || o.y < cornerDist
+                              || o.x > s.w - cornerDist || o.y > s.h - cornerDist);
+  const targetGone = !pet.target || pet.target.sunk || pet.target.dragging || cornered(pet.target);
   if (targetGone || pet.retargetAt <= 0){
     let best = null, bestD = Infinity;
     for (const o of s.objs){
-      if (o.sunk || o.dragging) continue;
+      if (o.sunk || o.dragging || cornered(o)) continue;
       const d = Math.hypot(o.x - pet.x, o.y - pet.y);
       if (d < bestD){ bestD = d; best = o; }
     }
