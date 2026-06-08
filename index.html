@@ -1286,6 +1286,8 @@ function pushFrame(ts){
   }
 
   if (s.time <= 0){ endGame('push'); return; }
+  // also end early if every object is in the hole — no point in standing around
+  if (s.objs.every(o => o.sunk)){ endGame('push'); return; }
   requestAnimationFrame(pushFrame);
 }
 function pushBG(w, h){
