@@ -311,6 +311,7 @@ const MAX_CATCHUP_H = 36;     // cap offline simulation so it never feels punish
 const TIRED_SLEEP_AT = 15;    // pet auto-naps when energy crosses this threshold
 const SLEEP_DECAY_MULT = 0.35;// hunger/happy decay much slower while asleep — sleep restores
 const FULL_REFUSE = 92;       // at or above this fullness, the pet refuses food
+const HUNGER_BLOCK = 25;      // below this fullness, the pet won't play or explore
 
 // ===================== STATE SHAPE (v2) =====================
 // S = { pets: [...], currentId, coins, lastVisitDay, streak }
@@ -883,6 +884,7 @@ function pickGame(){
   if (!P) return;
   if (P.asleep){ toast('wake them up to play together'); return; }
   if (P.energy < 12){ toast(`${P.name} is too sleepy to play`); return; }
+  if (P.full < HUNGER_BLOCK){ toast(`${P.name} is too hungry to play — feed them first`); return; }
   $('ovGames').classList.add('show');
 }
 $('gFirefly').onclick   = ()=>{ $('ovGames').classList.remove('show'); startFirefly(); };
@@ -1055,9 +1057,19 @@ function endGame(mode){
   mgState.running=false;
   const earned=mgState.score;
   S.coins += earned;
-  if (mode==='kick'){ P.happy=clamp(P.happy+Math.min(28,earned*2)); P.energy=clamp(P.energy-10); }
-  else if (mode==='push'){ P.happy=clamp(P.happy+Math.min(24,earned*3)); P.energy=clamp(P.energy-6); }
-  else { P.happy=clamp(P.happy+Math.min(20,earned*1.5)); P.energy=clamp(P.energy-8); }
+  if (mode==='kick'){
+    P.happy=clamp(P.happy+Math.min(28,earned*2));
+    P.energy=clamp(P.energy-10);
+    P.full=clamp(P.full-12);                       // chasing the ball burns hunger
+  } else if (mode==='push'){
+    P.happy=clamp(P.happy+Math.min(24,earned*3));
+    P.energy=clamp(P.energy-6);
+    P.full=clamp(P.full-10);
+  } else {
+    P.happy=clamp(P.happy+Math.min(20,earned*1.5));
+    P.energy=clamp(P.energy-8);
+    P.full=clamp(P.full-8);                        // firefly catch — gentler
+  }
   gainXP(mode==='kick' ? Math.max(3, Math.floor(earned/2))
        : mode==='push' ? Math.max(2, earned)
        : Math.max(2, Math.floor(earned/3)));
@@ -1611,6 +1623,7 @@ const PLACES = [
 function openExplore(){
   if (!P) return;
   if (P.asleep){ toast(`${P.name} is sleeping — let them rest first`); return; }
+  if (P.full < HUNGER_BLOCK){ toast(`${P.name} is too hungry to explore — feed them first`); return; }
   renderMap();
   $('ovExplore').classList.add('show');
 }
@@ -1870,6 +1883,7 @@ function endWalk(){
   const totalXP    = (r.xp || 0) + s.collected;
   const totalCoins = (r.coins || 0) + s.coinsEarned;
   P.happy = clamp(P.happy + Math.min(10, 2 + s.collected));
+  P.full  = clamp(P.full - 10);                    // walks work up an appetite
   gainXP(totalXP);
   save(); refresh();
   $('mgmsg').style.display = 'flex';
