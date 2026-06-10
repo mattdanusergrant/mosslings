@@ -310,7 +310,6 @@ const DECAY = { full: 7, happy: 4.5, energyAwake: 5.5, energyAsleep: -22 };
 const MAX_CATCHUP_H = 36;     // cap offline simulation so it never feels punishing
 const TIRED_SLEEP_AT = 15;    // pet auto-naps when energy crosses this threshold
 const SLEEP_DECAY_MULT = 0.35;// hunger/happy decay much slower while asleep — sleep restores
-const FULL_REFUSE = 92;       // at or above this fullness, the pet refuses food
 const HUNGER_BLOCK = 25;      // below this fullness, the pet won't play or explore
 
 // ===================== STATE SHAPE (v2) =====================
@@ -841,7 +840,10 @@ function openFeed(){
   if (!P) return;
   if (P.asleep){ toast('they are asleep — wake them first'); return; }
   if (feedTray){ toast(`still some ${feedTray.food.n} on the plate`); return; }
-  if (P.full >= FULL_REFUSE){
+  // a food is only offered if the WHOLE plate fits — no starting a meal the
+  // pet can't finish (morsels would otherwise bounce off once it fills up).
+  const smallest = Math.min(...FOODS.map(f => f.fill));
+  if (P.full + smallest > 100){
     toast(`${P.name} is too full to eat right now`);
     return;
   }
@@ -849,10 +851,11 @@ function openFeed(){
   $('feedSub').textContent = P.full>=80 ? `${P.name} is getting full…` : 'A little something to fill the tummy.';
   for(const f of FOODS){
     const b=document.createElement('button'); b.className='food';
-    const afford = S.coins>=f.cost && P.full<FULL_REFUSE;
+    const fits = (P.full + f.fill) <= 100;
+    const afford = S.coins>=f.cost && fits;
     b.disabled=!afford;
     b.innerHTML=`<span class="fe">${f.e}</span><span class="fmeta"><div class="fn">${f.n}</div>
-      <div class="fsub">${f.sub}</div></span><span class="cost"><span class="c"></span>${f.cost}</span>`;
+      <div class="fsub">${fits ? f.sub : 'too much for now'}</div></span><span class="cost"><span class="c"></span>${f.cost}</span>`;
     b.onclick=()=>feed(f);
     list.appendChild(b);
   }
@@ -862,6 +865,7 @@ function feed(f){
   if (!P || S.coins < f.cost) return;
   if (P.asleep){ toast(`${P.name} is sleeping — wake them first`); return; }
   if (feedTray){ toast(`still some ${feedTray.food.n} on the plate`); return; }
+  if (P.full + f.fill > 100){ toast(`${P.name} doesn't have room for all that`); return; }
   S.coins -= f.cost;
   startTray(f);
   $('ovFeed').classList.remove('show');
@@ -2036,17 +2040,8 @@ function trayTick(dt){
       const vx = m.x - px, vy = m.y - py, ux = pet.x - px, uy = pet.mouthY - py;
       const tt = Math.max(0, Math.min(1, (ux*vx + uy*vy) / ((vx*vx + vy*vy) || 1)));
       if (Math.hypot(px + tt*vx - pet.x, py + tt*vy - pet.mouthY) < pet.r * 0.55){
-        if (P.full >= FULL_REFUSE){
-          // refuse — bounce the morsel away from the pet's body
-          m.vy = -Math.abs(m.vy) * 0.5 - 0.25;
-          m.vx = (m.x < pet.x ? -1 : 1) * (Math.abs(m.vx) * 0.5 + 0.15);
-          m.tasty = false;
-          if (!feedTray._refused){
-            feedTray._refused = true;
-            toast(`${P.name} is too full!`);
-          }
-          continue;
-        }
+        // the plate was gated at feed-time to fit under 100, so every morsel
+        // is always eaten — no mid-meal refusal.
         P.full = clamp(P.full + f.fill / n);
         P.happy = clamp(P.happy + f.joy / n + (m.tasty ? 1 : 0));
         sfx('feed');
