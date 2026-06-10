@@ -1663,18 +1663,22 @@ function visitPlace(pl){
   startWalk(pl);
 }
 
-// ===================== WALK — side-scrolling explore =====================
-// A short stroll through the chosen place. The pet walks in from the left,
-// the world parallax-scrolls past, and tappable trinkets drift by. Items
-// the pet passes through are auto-collected; the player can also tap any
-// item to grab it early. After the walk we still grant the place's
-// intrinsic reward (so a Pond walk still gets the "watched the stars"
-// bonus) plus a per-item bonus from the walk itself.
+// ===================== WALK — leashed northward journey =====================
+// The pet hops up a winding path heading north (the world scrolls *down*),
+// with a leash trailing back to the player's hand at the bottom of the screen.
+// Every few seconds an EVENT appears: a trinket on the path (tap to grab a
+// keepsake), a friend to meet (tap to greet), or a FORK that pauses the walk
+// until the player taps which way to go. After the journey we grant the
+// place's intrinsic reward plus what was found and who was met along the way.
 const WALK_SCENES = {
-  meadow: { sky:['#cfe9f3','#fcebc6'], hill:'#bcd99b', ground:'#c1d68d', items:['🌼','🌿','🌸','🦋'] },
-  wood:   { sky:['#b6d0b0','#dcc9a0'], hill:'#7d9968', ground:'#a98f6a', items:['🍂','🌰','🪺','🐿'] },
-  pond:   { sky:['#1a1f3a','#3a3458'], hill:'#2c3a5e', ground:'#3b4a6c', items:['✨','⭐','🌙','🐟'], night:true },
-  grove:  { sky:['#d6c8e0','#e9c5a8'], hill:'#9a83a8', ground:'#8a7090', items:['🍄','🌿','🦋','🌺'] },
+  meadow: { grass:'#bcd99b', path:'#d8c79a', stone:'#c7b487', sky:'#dff0d6',
+            items:['🌼','🌿','🌸','🍓','🪶'], friends:['🐝','🦋','🐞','🐌'] },
+  wood:   { grass:'#7d9968', path:'#b09474', stone:'#9c805f', sky:'#cfd9c0',
+            items:['🍂','🌰','🪺','🍄','🪵'], friends:['🐿️','🦔','🦉','🐇'] },
+  pond:   { grass:'#2c3a5e', path:'#3b4a6c', stone:'#4a5a80', sky:'#1a2340', night:true,
+            items:['✨','⭐','🌙','🐚','💧'], friends:['🐸','🦆','🦢','🐟'] },
+  grove:  { grass:'#9a83a8', path:'#b79c8f', stone:'#a3897c', sky:'#d6c8e0',
+            items:['🍄','🌿','🌺','🫐','🌷'], friends:['🦋','🐌','🐛','🦗'] },
 };
 
 function startWalk(pl){
@@ -1683,20 +1687,25 @@ function startWalk(pl){
   const scene = WALK_SCENES[pl.id] || WALK_SCENES.meadow;
   mgState = {
     place: pl, scene,
-    time: 14, last: performance.now(), running: false,
+    time: 24, last: performance.now(), running: false,
     w: 0, h: 0,
-    petX: -120, step: 0,
-    petAir: 0, petVy: 0,                    // jump physics (offset from ground; -ve = up)
-    items: [], pops: [], spawnT: 600,
-    collected: 0, coinsEarned: 0,
-    bgScroll: 0,
+    dist: 0,                       // total scroll distance (for path texture)
+    scrollV: 0, scrollTarget: 0.16,// px/ms — 0 while a fork is being decided
+    petLane: 0.5, laneTarget: 0.5, // 0..1 across the path; forks nudge it
+    recenterAt: 0,
+    hop: 0,                        // bounce phase
+    events: [],                    // scrolling trinkets / friends
+    eventT: 1600,                  // countdown to next event
+    pending: null,                 // active fork awaiting a choice
+    found: 0, friends: 0, coinsEarned: 0,
+    pops: [],
   };
   openMG();
   $('mgScore').textContent = 0;
-  $('mgTime').textContent = 14;
+  $('mgTime').textContent = 24;
   $('mgmsg').innerHTML = `<h2>${pl.e} ${pl.n} walk</h2>
-    <p>${P.name} will run along. Tap the screen to make them jump — time it right to snatch things out of the air!</p>
-    <button class="btn" id="mgStart">Let's go</button>
+    <p>${P.name} bounds up the path while you hold the leash. Tap things along the way to grab them, tap a friend to say hello — and at a fork, tap which way to go!</p>
+    <button class="btn" id="mgStart">Set off</button>
     <button class="btn ghost" id="mgQuit">Maybe later</button>`;
   $('mgStart').onclick = ()=>{
     $('mgmsg').style.display='none';
@@ -1705,180 +1714,264 @@ function startWalk(pl){
     requestAnimationFrame(walkFrame);
   };
   $('mgQuit').onclick = ()=>{
-    // walk skipped — refund the cooldown
-    if (P.lastVisits && P.lastVisits[pl.id]) delete P.lastVisits[pl.id];
+    if (P.lastVisits && P.lastVisits[pl.id]) delete P.lastVisits[pl.id];   // refund cooldown
     save(); closeGame();
   };
 }
+
+function walkPetY(s){ return s.h * 0.42; }
+function walkPetX(s){ return s.w * 0.5 + (s.petLane - 0.5) * s.w * 0.30; }
 
 function walkFrame(ts){
   if (!mgState || !mgState.running) return;
   const dt = Math.min(50, ts - mgState.last); mgState.last = ts;
   const s = mgState;
-  s.time -= dt / 1000;
-  $('mgTime').textContent = Math.max(0, Math.ceil(s.time));
-  $('mgScore').textContent = s.collected;
 
-  // pet eases in from left, then runs in place while world scrolls
-  const targetX = s.w * 0.32;
-  s.petX += (targetX - s.petX) * 0.04;
-  s.step += dt * 0.008;
-  s.bgScroll += dt * 0.12;
+  // a fork pauses forward motion (and the clock) until the player chooses
+  const paused = !!s.pending;
+  s.scrollTarget = paused ? 0 : 0.16;
+  s.scrollV += (s.scrollTarget - s.scrollV) * 0.08;
+  s.dist += s.scrollV * dt;
+  s.hop += dt * 0.012 * (0.4 + s.scrollV / 0.16 * 0.6);   // hop slows when paused
 
-  // jump physics: gravity always; land at petAir = 0
-  s.petVy += 0.0050 * dt;
-  s.petAir += s.petVy * dt;
-  if (s.petAir > 0){ s.petAir = 0; s.petVy = 0; }
-
-  // spawn items at jumpable heights (above the ground, within jump reach)
-  s.spawnT -= dt;
-  if (s.spawnT <= 0){
-    s.spawnT = 850 + Math.random() * 600;
-    const items = s.scene.items;
-    const groundY = s.h * 0.72;
-    const lowest  = 30;                  // just above pet's head
-    const highest = 210;                 // near the peak of a good jump
-    s.items.push({
-      x: s.w + 40,
-      y: groundY - (lowest + Math.random() * (highest - lowest)),
-      r: 24,
-      e: items[Math.floor(Math.random() * items.length)],
-      vx: -0.16 - Math.random() * 0.05,
-      wob: Math.random() * 6.28,
-    });
+  if (!paused){
+    s.time -= dt / 1000;
+    // ease the pet back to center after a fork choice
+    if (s.recenterAt && ts > s.recenterAt){ s.laneTarget = 0.5; s.recenterAt = 0; }
+    s.petLane += (s.laneTarget - s.petLane) * 0.06;
+    // spawn the next event
+    s.eventT -= dt;
+    if (s.eventT <= 0){ spawnEvent(s); s.eventT = 3200 + Math.random() * 2200; }
   }
 
-  walkDrawBG(s, ts);
-  walkDrawItems(s, dt);
+  // scroll active events downward; drop ones that slid off the bottom
+  for (let i = s.events.length - 1; i >= 0; i--){
+    const ev = s.events[i];
+    ev.y += s.scrollV * dt;
+    ev.wob += 0.05;
+    if (ev.y > s.h + 60){ s.events.splice(i, 1); }
+  }
+
+  walkDrawBG(s);
+  walkDrawPath(s);
+  if (s.pending) walkDrawFork(s);
+  walkDrawEvents(s);
+  walkDrawLeash(s, ts);
   walkDrawPet(s, ts);
   walkDrawPops(s, dt);
+  if (s.pending) walkDrawForkArrows(s, ts);
 
-  if (s.time <= 0){ endWalk(); return; }
+  $('mgTime').textContent = Math.max(0, Math.ceil(s.time));
+  $('mgScore').textContent = s.found + s.friends;
+
+  if (s.time <= 0 && !paused){ endWalk(); return; }
   requestAnimationFrame(walkFrame);
 }
 
-function walkDrawBG(s, ts){
+function spawnEvent(s){
+  const roll = Math.random();
+  if (roll < 0.30){
+    // fork — pause and wait for a tap
+    s.pending = { chosen:false };
+    sfx('sleep');
+    return;
+  }
+  const friend = roll < 0.62;     // ~32% friend, ~38% trinket
+  const pool = friend ? s.scene.friends : s.scene.items;
+  s.events.push({
+    type: friend ? 'friend' : 'item',
+    lane: [0.30, 0.5, 0.70][Math.floor(Math.random()*3)],
+    y: -40,
+    r: friend ? 30 : 26,
+    e: pool[Math.floor(Math.random()*pool.length)],
+    wob: Math.random()*6.28,
+    done: false,
+  });
+}
+
+function walkEventX(s, ev){ return s.w * 0.5 + (ev.lane - 0.5) * s.w * 0.30; }
+
+function walkDrawBG(s){
   const sky = mctx.createLinearGradient(0, 0, 0, s.h);
-  sky.addColorStop(0, s.scene.sky[0]); sky.addColorStop(1, s.scene.sky[1]);
+  sky.addColorStop(0, s.scene.sky); sky.addColorStop(1, s.scene.grass);
   mctx.fillStyle = sky; mctx.fillRect(0, 0, s.w, s.h);
   if (s.scene.night){
     mctx.fillStyle = '#fff';
-    for (let i = 0; i < 36; i++){
-      const x = ((i * 73 - s.bgScroll * 0.2) % s.w + s.w) % s.w;
-      const y = (i * 47) % (s.h * 0.5);
-      mctx.globalAlpha = 0.4 + 0.4 * Math.sin(ts * 0.002 + i);
+    for (let i = 0; i < 40; i++){
+      const x = (i * 97) % s.w;
+      const y = ((i * 53 + s.dist * 0.2) % (s.h * 0.5));
+      mctx.globalAlpha = 0.5;
       mctx.fillRect(x, y, 2, 2);
     }
     mctx.globalAlpha = 1;
   }
-  // hills
-  const hillsY = s.h * 0.62;
-  mctx.fillStyle = s.scene.hill;
-  for (let i = -1; i < 7; i++){
-    const x = ((i * 180 - s.bgScroll * 0.5) % (s.w + 360) + s.w + 360) % (s.w + 360) - 180;
-    mctx.beginPath();
-    mctx.arc(x, hillsY + 30, 100, Math.PI, 2 * Math.PI); mctx.fill();
+}
+
+function walkDrawPath(s){
+  const pw = s.w * 0.42, cx = s.w * 0.5;
+  mctx.fillStyle = s.scene.path;
+  mctx.fillRect(cx - pw/2, 0, pw, s.h);
+  // soft edges
+  mctx.fillStyle = 'rgba(0,0,0,.08)';
+  mctx.fillRect(cx - pw/2, 0, 6, s.h);
+  mctx.fillRect(cx + pw/2 - 6, 0, 6, s.h);
+  // stepping stones scrolling down
+  mctx.fillStyle = s.scene.stone;
+  const spacing = 90;
+  const off = s.dist % spacing;
+  for (let y = -spacing + off; y < s.h + spacing; y += spacing){
+    for (const lane of [0.34, 0.66]){
+      const x = cx + (lane - 0.5) * pw;
+      mctx.beginPath(); mctx.ellipse(x, y, 18, 11, 0, 0, 7); mctx.fill();
+    }
+    mctx.beginPath(); mctx.ellipse(cx, y + spacing/2, 20, 12, 0, 0, 7); mctx.fill();
   }
-  // ground band
-  mctx.fillStyle = s.scene.ground;
-  mctx.fillRect(0, s.h * 0.78, s.w, s.h);
-  // motion stripes
-  mctx.fillStyle = 'rgba(0,0,0,.10)';
-  for (let i = 0; i < 10; i++){
-    const x = ((i * 90 - s.bgScroll) % (s.w + 90) + s.w + 90) % (s.w + 90) - 45;
-    mctx.fillRect(x, s.h * 0.88, 40, 4);
+}
+
+function walkDrawFork(s){
+  // a grassy wedge above the pet so the path appears to split left/right
+  const cx = s.w * 0.5, py = walkPetY(s);
+  mctx.fillStyle = s.scene.grass;
+  mctx.beginPath();
+  mctx.moveTo(cx, py - 30);
+  mctx.lineTo(cx - s.w * 0.20, -20);
+  mctx.lineTo(cx + s.w * 0.20, -20);
+  mctx.closePath(); mctx.fill();
+}
+
+function walkDrawEvents(s){
+  mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+  for (const ev of s.events){
+    if (ev.done) continue;
+    const x = walkEventX(s, ev), y = ev.y + Math.sin(ev.wob) * 3;
+    mctx.fillStyle = 'rgba(0,0,0,.14)';
+    mctx.beginPath(); mctx.ellipse(x, y + ev.r*0.7, ev.r*0.6, ev.r*0.2, 0, 0, 7); mctx.fill();
+    mctx.font = `${ev.r * 1.6}px serif`;
+    mctx.fillText(ev.e, x, y);
   }
+  mctx.textBaseline = 'alphabetic';
+}
+
+function walkDrawLeash(s, ts){
+  const handX = s.w * 0.5, handY = s.h - 6;
+  const px = walkPetX(s), py = walkPetY(s) + Math.min(s.w,s.h)*0.06;
+  const sway = Math.sin(ts * 0.002) * 10;
+  const midX = (handX + px) / 2 + sway, midY = (handY + py) / 2 + 34;
+  mctx.strokeStyle = '#7a5a3a'; mctx.lineWidth = 4; mctx.lineCap = 'round';
+  mctx.beginPath(); mctx.moveTo(handX, handY);
+  mctx.quadraticCurveTo(midX, midY, px, py); mctx.stroke();
+  // the player's hand at the bottom
+  mctx.fillStyle = '#caa06a';
+  mctx.beginPath(); mctx.arc(handX, handY, 12, 0, 7); mctx.fill();
+  mctx.fillStyle = '#9c7748';
+  mctx.beginPath(); mctx.arc(handX, handY, 12, 0, 7); mctx.lineWidth = 0; mctx.stroke();
 }
 
 function walkDrawPet(s, ts){
   if (!P) return;
   const sp = SPECIES[P.species];
-  const R = Math.min(s.w, s.h) * 0.12;
-  const x = s.petX;
-  const airborne = s.petAir < -1;
-  const stepBob = airborne ? 0 : Math.sin(s.step * 2) * 3;
-  const groundY = s.h * 0.72;
-  const y = groundY + s.petAir + stepBob;
-  // shadow stays on the ground; shrinks/fades with jump height
-  const airT = Math.min(1, -s.petAir / 220);
-  mctx.fillStyle = `rgba(0,0,0,${0.22 * (1 - airT * 0.7)})`;
+  const R = Math.min(s.w, s.h) * 0.11;
+  const cx = walkPetX(s);
+  const baseY = walkPetY(s);
+  const hop = Math.abs(Math.sin(s.hop)) * R * 0.55;
+  const y = baseY - hop;
+  const airborne = hop > R * 0.18;
+  // shadow on the path, shrinks with hop height
+  const airT = Math.min(1, hop / (R * 0.55));
+  mctx.fillStyle = `rgba(0,0,0,${0.22 * (1 - airT * 0.6)})`;
   mctx.beginPath();
-  mctx.ellipse(x, groundY + R * 0.95, R * (0.85 - 0.35 * airT), R * 0.28, 0, 0, 7);
+  mctx.ellipse(cx, baseY + R * 0.95, R * (0.82 - 0.3 * airT), R * 0.26, 0, 0, 7);
   mctx.fill();
   // body
   mctx.fillStyle = sp.body;
-  mctx.beginPath(); mctx.ellipse(x, y, R * 1.02, R * 0.92, 0, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.ellipse(cx, y, R * 1.02, R * 0.92, 0, 0, 7); mctx.fill();
   mctx.fillStyle = sp.belly;
-  mctx.beginPath(); mctx.ellipse(x, y + R * 0.18, R * 0.6, R * 0.5, 0, 0, 7); mctx.fill();
-  // feet: tucked up while airborne, running cycle while grounded
+  mctx.beginPath(); mctx.ellipse(cx, y + R * 0.18, R * 0.6, R * 0.5, 0, 0, 7); mctx.fill();
+  // feet: tucked while hopping, little shuffle while grounded
   let f1, f2;
-  if (airborne){ f1 = -R * 0.22; f2 = -R * 0.22; }
-  else { f1 = Math.sin(s.step * 4) * 4; f2 = -f1; }
+  if (airborne){ f1 = -R * 0.18; f2 = -R * 0.18; }
+  else { f1 = Math.sin(s.hop * 2) * 3; f2 = -f1; }
   mctx.fillStyle = sp.body;
-  mctx.beginPath(); mctx.ellipse(x - R * 0.42, y + R * 0.82 + f1, R * 0.22, R * 0.16, 0, 0, 7); mctx.fill();
-  mctx.beginPath(); mctx.ellipse(x + R * 0.42, y + R * 0.82 + f2, R * 0.22, R * 0.16, 0, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.ellipse(cx - R * 0.42, y + R * 0.82 + f1, R * 0.22, R * 0.16, 0, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.ellipse(cx + R * 0.42, y + R * 0.82 + f2, R * 0.22, R * 0.16, 0, 0, 7); mctx.fill();
+  // collar where the leash attaches
+  mctx.strokeStyle = '#c2552f'; mctx.lineWidth = R * 0.10;
+  mctx.beginPath(); mctx.ellipse(cx, y + R * 0.30, R * 0.5, R * 0.34, 0, 0.1*Math.PI, 0.9*Math.PI); mctx.stroke();
   // happy eyes
   mctx.strokeStyle = '#4a3b30'; mctx.lineWidth = R * 0.07; mctx.lineCap = 'round';
   for (const sgn of [-1, 1]){
     mctx.beginPath();
-    mctx.arc(x + sgn * R * 0.34, y - R * 0.03, R * 0.17, 1.15 * Math.PI, 1.85 * Math.PI);
+    mctx.arc(cx + sgn * R * 0.34, y - R * 0.05, R * 0.17, 1.15 * Math.PI, 1.85 * Math.PI);
     mctx.stroke();
   }
   // cheeks
   mctx.fillStyle = sp.cheek; mctx.globalAlpha = 0.7;
-  mctx.beginPath(); mctx.arc(x - R * 0.42, y + R * 0.18, R * 0.10, 0, 7); mctx.fill();
-  mctx.beginPath(); mctx.arc(x + R * 0.42, y + R * 0.18, R * 0.10, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.arc(cx - R * 0.42, y + R * 0.15, R * 0.10, 0, 7); mctx.fill();
+  mctx.beginPath(); mctx.arc(cx + R * 0.42, y + R * 0.15, R * 0.10, 0, 7); mctx.fill();
   mctx.globalAlpha = 1;
 }
 
-function walkDrawItems(s, dt){
-  const groundY = s.h * 0.72;
-  const petCx = s.petX, petCy = groundY + s.petAir;
-  const R = Math.min(s.w, s.h) * 0.12;
-  const catchR = R * 0.85;
-  for (let i = s.items.length - 1; i >= 0; i--){
-    const it = s.items[i];
-    it.x += it.vx * dt;
-    it.wob += 0.05;
-    if (it.x < -60){ s.items.splice(i, 1); continue; }
-    const drawY = it.y + Math.sin(it.wob) * 4;
-    // collect only when the pet's body overlaps the item — no tap-to-grab
-    if (Math.hypot(it.x - petCx, drawY - petCy) < it.r + catchR){
-      walkCollect(s, it); s.items.splice(i, 1); continue;
-    }
-    mctx.font = `${it.r * 1.7}px serif`;
-    mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
-    mctx.fillText(it.e, it.x, drawY);
-  }
-  mctx.textBaseline = 'alphabetic';
+function walkDrawForkArrows(s, ts){
+  const pulse = 0.6 + 0.4 * Math.sin(ts * 0.006);
+  const y = s.h * 0.30;
+  mctx.save();
+  mctx.globalAlpha = pulse;
+  mctx.font = `${Math.min(s.w,s.h)*0.16}px serif`;
+  mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+  mctx.fillText('👈', s.w * 0.24, y);
+  mctx.fillText('👉', s.w * 0.76, y);
+  mctx.restore();
+  mctx.fillStyle = '#fff'; mctx.font = '600 16px system-ui, sans-serif';
+  mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+  mctx.fillText('which way?', s.w * 0.5, s.h * 0.18);
 }
 
 function walkDrawPops(s, dt){
   for (let i = s.pops.length - 1; i >= 0; i--){
     const o = s.pops[i];
     o.y -= dt * 0.04;
-    o.life -= dt * 0.0018;
+    o.life -= dt * 0.0016;
     if (o.life <= 0){ s.pops.splice(i, 1); continue; }
     mctx.globalAlpha = Math.max(0, o.life);
-    mctx.font = '24px serif'; mctx.textAlign = 'center'; mctx.fillText('✨', o.x, o.y);
+    mctx.font = '24px serif'; mctx.textAlign = 'center'; mctx.fillText(o.txt || '✨', o.x, o.y);
     mctx.globalAlpha = 1;
   }
 }
 
 function walkTap(x, y){
-  const s = mgState; if (!s) return;
-  // tap anywhere to jump — but only when grounded (no double-jump)
-  if (s.petAir > -2){
-    s.petVy = -1.5;
+  const s = mgState; if (!s || !s.running) return;
+  // a fork is waiting — left or right half of the screen picks the branch
+  if (s.pending){
+    const left = x < s.w * 0.5;
+    s.laneTarget = left ? 0.28 : 0.72;
+    s.recenterAt = performance.now() + 1300;
+    s.pending = null;
+    s.pops.push({ x: walkPetX(s), y: walkPetY(s) - 30, life: 1, txt: left ? '👈' : '👉' });
+    if (Math.random() < 0.35){ s.coinsEarned++; S.coins++; }
     sfx('petkick');
+    return;
   }
-}
-
-function walkCollect(s, it){
-  s.collected++;
-  s.pops.push({ x: it.x, y: it.y, life: 1 });
-  if (Math.random() < 0.45){ s.coinsEarned++; S.coins++; }
-  sfx('firefly');
+  // otherwise: tap a trinket or friend that's on screen
+  for (const ev of s.events){
+    if (ev.done) continue;
+    const ex = walkEventX(s, ev), ey = ev.y;
+    if (Math.hypot(ex - x, ey - y) < ev.r + 26){
+      ev.done = true;
+      if (ev.type === 'friend'){
+        s.friends++; P.happy = clamp(P.happy + 2);
+        s.pops.push({ x: ex, y: ey, life: 1, txt: '💗' });
+        sfx('cuddle');
+      } else {
+        s.found++;
+        if (Math.random() < 0.45){ s.coinsEarned++; S.coins++; }
+        s.pops.push({ x: ex, y: ey, life: 1, txt: '✨' });
+        sfx('firefly');
+      }
+      // pull the eaten event out of the list shortly (let the pop show)
+      ev.y = s.h + 999;
+      return;
+    }
+  }
 }
 
 function endWalk(){
@@ -1886,16 +1979,20 @@ function endWalk(){
   s.running = false;
   const pl = s.place;
   const r = pl.visit ? pl.visit() : { xp: 3, msg: `${P.name} enjoyed the walk` };
-  const totalXP    = (r.xp || 0) + s.collected;
+  const totalXP    = (r.xp || 0) + s.found + s.friends * 2;
   const totalCoins = (r.coins || 0) + s.coinsEarned;
-  P.happy = clamp(P.happy + Math.min(10, 2 + s.collected));
-  P.full  = clamp(P.full - 10);                    // walks work up an appetite
+  P.happy = clamp(P.happy + Math.min(12, 2 + s.found + s.friends * 2));
+  P.full  = clamp(P.full - 10);                    // the journey works up an appetite
   gainXP(totalXP);
   save(); refresh();
   $('mgmsg').style.display = 'flex';
+  const bits = [];
+  if (s.found)   bits.push(`found ${s.found} keepsake${s.found===1?'':'s'}`);
+  if (s.friends) bits.push(`met ${s.friends} friend${s.friends===1?'':'s'}`);
+  const journey = bits.length ? bits.join(' and ') : 'had a quiet wander';
   const coinsLine = totalCoins ? `<br>+${totalCoins} 🪙` : '';
   $('mgmsg').innerHTML = `<h2>Home again ✨</h2>
-    <p>${r.msg}.<br>Brought back ${s.collected} little thing${s.collected===1?'':'s'} from the walk.</p>
+    <p>${r.msg}.<br>${P.name} ${journey} on the way.</p>
     <p>+${totalXP} XP${coinsLine}</p>
     <button class="btn" id="mgDone">Done</button>`;
   $('mgDone').onclick = closeGame;
