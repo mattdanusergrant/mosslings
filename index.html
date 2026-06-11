@@ -1721,7 +1721,7 @@ const WALK_SCENES = {
             ]},
 };
 const TOTAL_STOPS = 5;
-const STOP_DIST_MIN = 70, STOP_DIST_MAX = 130;
+const STOP_DIST_MIN = 280, STOP_DIST_MAX = 520;
 
 function startWalk(pl){
   if (!P) return;
@@ -1838,34 +1838,46 @@ function makeTrinket(s){
   const e = pickRandom(s.scene.items);
   return {
     e, title: 'A keepsake!',
-    body: `${P.name} spots a ${e} on the path and tucks it away.`,
-    btn: 'Onward', sfx: 'firefly',
-    apply: ()=>{ s.found++; if (Math.random()<0.45){ s.coinsEarned++; S.coins++; } },
+    body: `${P.name} spots a ${e} on the path. Keep it or leave it be?`,
+    sfx: 'firefly',
+    choices: [
+      { label: '🎒 Tuck it away', apply: ()=>{ s.found++; if (Math.random()<0.5){ s.coinsEarned++; S.coins++; } } },
+      { label: '🌬️ Leave it be',  apply: ()=>{ P.happy = clamp(P.happy + 3); } },
+    ],
   };
 }
 function makeFriend(s){
   const e = pickRandom(s.scene.friends);
   return {
     e, title: 'A new friend',
-    body: `A little ${e} pops out to say hi. ${P.name} squeaks happily.`,
-    btn: 'Wave back', sfx: 'cuddle',
-    apply: ()=>{ s.friends++; P.happy = clamp(P.happy + 3); },
+    body: `A little ${e} pops out! How should ${P.name} say hello?`,
+    sfx: 'cuddle',
+    choices: [
+      { label: '🎮 Play together', apply: ()=>{ s.friends++; P.happy = clamp(P.happy + 5); P.energy = clamp(P.energy - 3); } },
+      { label: '🤲 Just say hi',   apply: ()=>{ s.friends++; P.happy = clamp(P.happy + 2); } },
+    ],
   };
 }
 function makeCoins(s){
   return {
     e: '🪙', title: 'A tiny stash',
-    body: `${P.name} sniffs out a few coins under the leaves.`,
-    btn: 'Pocket them', sfx: 'daily',
-    apply: ()=>{ const n = 2 + Math.floor(Math.random()*3); s.coinsEarned += n; S.coins += n; },
+    body: `${P.name} sniffs out coins under the leaves. Grab them all?`,
+    sfx: 'daily',
+    choices: [
+      { label: '🤲 Grab them all', apply: ()=>{ const n = 3+Math.floor(Math.random()*3); s.coinsEarned+=n; S.coins+=n; P.energy=clamp(P.energy-2); } },
+      { label: '✌️ Take just a few', apply: ()=>{ const n = 1+Math.floor(Math.random()*2); s.coinsEarned+=n; S.coins+=n; P.happy=clamp(P.happy+2); } },
+    ],
   };
 }
 function makeSnack(s){
   return {
     e: '🍓', title: 'Wild snack',
-    body: `A patch of wild berries! ${P.name} has a quick nibble.`,
-    btn: 'Yum', sfx: 'feed',
-    apply: ()=>{ P.full = clamp(P.full + 12); s.snacks++; },
+    body: `A patch of wild berries — ${P.name}'s eyes go wide.`,
+    sfx: 'feed',
+    choices: [
+      { label: '😋 Eat heartily',  apply: ()=>{ P.full = clamp(P.full + 18); s.snacks++; } },
+      { label: '🌸 Nibble slowly', apply: ()=>{ P.full = clamp(P.full + 8); P.happy = clamp(P.happy + 4); s.snacks++; } },
+    ],
   };
 }
 function makeFork(s){
@@ -1890,29 +1902,36 @@ function makeFork(s){
 }
 function makeStumble(s){
   const stories = [
-    `${P.name} chases a leaf and tumbles. They're fine!`,
-    `${P.name} stops to sniff a flower for ages.`,
+    `${P.name} chases a leaf and takes a little tumble. They're fine!`,
+    `${P.name} stops to sniff a flower for absolutely ages.`,
     `${P.name} stares at a cloud shaped like a snack.`,
-    `A pebble! ${P.name} considers it carefully, then walks on.`,
+    `A pebble! ${P.name} considers it very carefully.`,
   ];
   return {
     e: '🍃', title: 'A little dawdle',
     body: pickRandom(stories),
-    btn: 'Onward', sfx: 'sleep',
+    sfx: 'sleep',
+    choices: [
+      { label: '😄 Laugh it off', apply: ()=>{ P.happy = clamp(P.happy + 3); } },
+      { label: '⏸️ Use the pause', apply: ()=>{ P.energy = clamp(P.energy + 3); } },
+    ],
   };
 }
 function makeRest(s){
   const stories = [
-    `${P.name} flops onto a soft patch and stares at the clouds.`,
+    `${P.name} flops onto a soft patch and looks up at the sky.`,
     `${P.name} finds a warm stone to sit on for a moment.`,
     `${P.name} curls up in the grass. Just for a minute.`,
-    `${P.name} leans against a tree and closes their eyes briefly.`,
+    `${P.name} leans against a tree and closes their eyes.`,
   ];
   return {
     e: '💤', title: 'A little rest',
     body: pickRandom(stories),
-    btn: 'Ready now', sfx: 'sleep',
-    apply: ()=>{ P.energy = clamp(P.energy + 5); },
+    sfx: 'sleep',
+    choices: [
+      { label: '😴 Nap in the grass', apply: ()=>{ P.energy = clamp(P.energy + 8); } },
+      { label: '🌅 Watch the world', apply: ()=>{ P.happy = clamp(P.happy + 5); P.energy = clamp(P.energy + 3); } },
+    ],
   };
 }
 function makeDiscovery(s, lockedIds){
@@ -1923,8 +1942,12 @@ function makeDiscovery(s, lockedIds){
   save();
   return {
     e: pl.e, title: 'A hidden trail!',
-    body: `${P.name} noses out a path you've never seen before — leading to ${pl.n}. It's been added to your world map.`,
-    btn: 'Wonderful', sfx: 'daily',
+    body: `${P.name} noses out a path leading to ${pl.n}. It's been added to your world map.`,
+    sfx: 'daily',
+    choices: [
+      { label: '👀 Peek inside',   apply: ()=>{ const n=2; s.coinsEarned+=n; S.coins+=n; gainXP(2); } },
+      { label: '🗺️ Note it down', apply: ()=>{} },
+    ],
   };
 }
 
