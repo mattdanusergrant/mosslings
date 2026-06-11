@@ -1688,13 +1688,37 @@ function visitPlace(pl){
 // After the last encounter the journey ends and rewards are tallied.
 const WALK_SCENES = {
   meadow: { grass:'#bcd99b', path:'#d8c79a', stone:'#c7b487', sky:'#dff0d6',
-            items:['🌼','🌿','🌸','🍓','🪶'], friends:['🐝','🦋','🐞','🐌'] },
+            items:['🌼','🌿','🌸','🍓','🪶'], friends:['🐝','🦋','🐞','🐌'],
+            sideDeco:[
+              { e:'🌼', spacing:88,  xOff:40, size:20, side:'both' },
+              { e:'🌿', spacing:68,  xOff:60, size:17, side:'both' },
+              { e:'🌸', spacing:122, xOff:46, size:19, side:'left' },
+              { e:'🍀', spacing:108, xOff:62, size:16, side:'right' },
+            ]},
   wood:   { grass:'#7d9968', path:'#b09474', stone:'#9c805f', sky:'#cfd9c0',
-            items:['🍂','🌰','🪺','🍄','🪵'], friends:['🐿️','🦔','🦉','🐇'] },
+            items:['🍂','🌰','🪺','🍄','🪵'], friends:['🐿️','🦔','🦉','🐇'],
+            sideDeco:[
+              { e:'🌲', spacing:108, xOff:34, size:28, side:'both' },
+              { e:'🍂', spacing:72,  xOff:60, size:17, side:'both' },
+              { e:'🍄', spacing:118, xOff:48, size:19, side:'left' },
+              { e:'🪵', spacing:152, xOff:54, size:18, side:'right' },
+            ]},
   pond:   { grass:'#2c3a5e', path:'#3b4a6c', stone:'#4a5a80', sky:'#1a2340', night:true,
-            items:['✨','⭐','🌙','🐚','💧'], friends:['🐸','🦆','🦢','🐟'] },
+            items:['✨','⭐','🌙','🐚','💧'], friends:['🐸','🦆','🦢','🐟'],
+            sideDeco:[
+              { e:'🌾', spacing:82,  xOff:36, size:20, side:'both' },
+              { e:'✨', spacing:98,  xOff:56, size:15, side:'both' },
+              { e:'💧', spacing:128, xOff:44, size:17, side:'left' },
+              { e:'🌙', spacing:195, xOff:52, size:20, side:'right' },
+            ]},
   grove:  { grass:'#9a83a8', path:'#b79c8f', stone:'#a3897c', sky:'#d6c8e0',
-            items:['🍄','🌿','🌺','🫐','🌷'], friends:['🦋','🐌','🐛','🦗'] },
+            items:['🍄','🌿','🌺','🫐','🌷'], friends:['🦋','🐌','🐛','🦗'],
+            sideDeco:[
+              { e:'🍄', spacing:92,  xOff:36, size:22, side:'both' },
+              { e:'🌺', spacing:78,  xOff:58, size:18, side:'both' },
+              { e:'🌷', spacing:114, xOff:44, size:19, side:'left' },
+              { e:'🌿', spacing:68,  xOff:64, size:16, side:'right' },
+            ]},
 };
 const TOTAL_STOPS = 5;
 const STOP_DIST_MIN = 70, STOP_DIST_MAX = 130;
@@ -1765,6 +1789,7 @@ function walkFrame(ts){
 
   walkDrawBG(s);
   walkDrawPath(s);
+  walkDrawSideDeco(s);
   walkDrawLeash(s, ts);
   walkDrawPet(s, ts);
   if (s.phase === 'stopped' && s.currentEv){ walkDrawBubble(s, s.currentEv, ts); }
@@ -1780,13 +1805,14 @@ function rollEncounter(s){
   const lockedIds = PLACES.map(p => p.id).filter(id => !S.unlocked.includes(id));
   const canDiscover = lockedIds.length > 0 && !s.unlockedPlace;     // one unlock max per walk
   const weights = [
-    ['trinket',  28],
-    ['friend',   22],
+    ['trinket',  26],
+    ['friend',   20],
     ['coins',    10],
-    ['snack',    10],
-    ['fork',     12],
-    ['stumble',   8],
-    ['discover', canDiscover ? 10 : 0],
+    ['snack',     9],
+    ['rest',      8],
+    ['fork',     11],
+    ['stumble',   7],
+    ['discover', canDiscover ? 9 : 0],
   ];
   const total = weights.reduce((a, [,w]) => a + w, 0);
   let r = Math.random() * total;
@@ -1798,6 +1824,7 @@ function rollEncounter(s){
         case 'friend':   return makeFriend(s);
         case 'coins':    return makeCoins(s);
         case 'snack':    return makeSnack(s);
+        case 'rest':     return makeRest(s);
         case 'fork':     return makeFork(s);
         case 'stumble':  return makeStumble(s);
         case 'discover': return makeDiscovery(s, lockedIds);
@@ -1872,6 +1899,20 @@ function makeStumble(s){
     e: '🍃', title: 'A little dawdle',
     body: pickRandom(stories),
     btn: 'Onward', sfx: 'sleep',
+  };
+}
+function makeRest(s){
+  const stories = [
+    `${P.name} flops onto a soft patch and stares at the clouds.`,
+    `${P.name} finds a warm stone to sit on for a moment.`,
+    `${P.name} curls up in the grass. Just for a minute.`,
+    `${P.name} leans against a tree and closes their eyes briefly.`,
+  ];
+  return {
+    e: '💤', title: 'A little rest',
+    body: pickRandom(stories),
+    btn: 'Ready now', sfx: 'sleep',
+    apply: ()=>{ P.energy = clamp(P.energy + 5); },
   };
 }
 function makeDiscovery(s, lockedIds){
@@ -1957,6 +1998,36 @@ function walkDrawPath(s){
     mctx.beginPath(); mctx.ellipse(cx, y + spacing/2, 20, 12, 0, 0, 7); mctx.fill();
   }
 }
+function walkDrawSideDeco(s){
+  const deco = s.scene.sideDeco;
+  if (!deco) return;
+  const pw = s.w * 0.42, cx = s.w * 0.5;
+  const pathLeft = cx - pw/2, pathRight = cx + pw/2;
+  mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+  for (const d of deco){
+    const n = 20;
+    const period = d.spacing * n;
+    const scroll = s.dist % period;
+    for (let i = 0; i < n; i++){
+      // deterministic stable position per stripe index
+      const h1 = Math.imul(i + 1, 2654435761) >>> 0;
+      const h2 = Math.imul(i * 17 + 7, 2246822519) >>> 0;
+      const yBase = i * d.spacing + (h1 % Math.max(1, d.spacing >> 1));
+      const y = ((yBase - scroll) % period + period) % period - 30;
+      if (y < -44 || y > s.h + 44) continue;
+      const alpha = Math.min(1, (y + 54) / 54) * Math.min(1, (s.h + 24 - y) / 54);
+      if (alpha <= 0) continue;
+      mctx.globalAlpha = alpha * 0.90;
+      const xJit = (h2 % 26) - 13;
+      mctx.font = `${d.size}px serif`;
+      if (d.side === 'left'  || d.side === 'both')
+        mctx.fillText(d.e, pathLeft  - d.xOff + xJit, y);
+      if (d.side === 'right' || d.side === 'both')
+        mctx.fillText(d.e, pathRight + d.xOff + xJit, y);
+    }
+  }
+  mctx.globalAlpha = 1; mctx.textBaseline = 'alphabetic';
+}
 function walkDrawLeash(s, ts){
   const handX = s.w * 0.5, handY = s.h - 6;
   const px = walkPetX(s), py = walkPetY(s) + Math.min(s.w,s.h)*0.06;
@@ -2031,7 +2102,12 @@ function walkDrawPops(s, dt){
     mctx.globalAlpha = 1;
   }
 }
-function walkTap(x, y){ /* encounters resolve via mgmsg buttons; canvas taps are inert */ }
+function walkTap(x, y){
+  if (!mgState || mgState.phase !== 'walking') return;
+  const txt = ['💗','🌟','✨'][Math.floor(Math.random()*3)];
+  mgState.pops.push({ x, y, life: 1, txt });
+  sfx('cuddle');
+}
 
 function endWalk(){
   const s = mgState; if (!s) return;
