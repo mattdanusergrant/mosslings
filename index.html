@@ -230,6 +230,15 @@
         <button class="food" id="gPush"><span class="fe">🕳️</span><span class="fmeta">
           <div class="fn">Hole-in-One</div><div class="fsub">flick acorns into the hole</div></span></button>
       </div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft);margin:4px 0 6px;text-align:left;">Learning games</div>
+      <div class="foods">
+        <button class="food" id="gBerry"><span class="fe">🍓</span><span class="fmeta">
+          <div class="fn">Berry Sort</div><div class="fsub">sort by colour · ages 5+</div></span></button>
+        <button class="food" id="gMemory"><span class="fe">🌸</span><span class="fmeta">
+          <div class="fn">Memory Meadow</div><div class="fsub">flip and match pairs · ages 5+</div></span></button>
+        <button class="food" id="gCount"><span class="fe">🌻</span><span class="fmeta">
+          <div class="fn">Counting Garden</div><div class="fsub">count and tap · ages 5+</div></span></button>
+      </div>
       <button class="btn ghost" id="gamesClose">Close</button>
     </div>
   </div>
@@ -296,6 +305,13 @@ const SPECIES = {
   tato: { name:'Tato', desc:'fungal',  body:'#caa3d8', belly:'#f2e3f6', cheek:'#f0a9b8', ear:'cap'   },
   bubo: { name:'Bubo', desc:'dusk',    body:'#86b8d6', belly:'#dcecf5', cheek:'#eda9b0', ear:'tuft'  },
 };
+
+// ---- Berry Sort colours ----
+const SORT_BERRIES = [
+  { e:'🍓', colorName:'red',    fill:'#e85555', basket:0 },
+  { e:'🫐', colorName:'purple', fill:'#7a58c0', basket:1 },
+  { e:'🌻', colorName:'yellow', fill:'#e8c030', basket:2 },
+];
 
 // ---- food shop: id, emoji, label, cost, fullness restored, joy bonus, morsel count ----
 const FOODS = [
@@ -900,6 +916,9 @@ function pickGame(){
 $('gFirefly').onclick   = ()=>{ $('ovGames').classList.remove('show'); startFirefly(); };
 $('gKick').onclick      = ()=>{ $('ovGames').classList.remove('show'); startKick(); };
 $('gPush').onclick      = ()=>{ $('ovGames').classList.remove('show'); startPush(); };
+$('gBerry').onclick     = ()=>{ $('ovGames').classList.remove('show'); startBerry(); };
+$('gMemory').onclick    = ()=>{ $('ovGames').classList.remove('show'); startMemory(); };
+$('gCount').onclick     = ()=>{ $('ovGames').classList.remove('show'); startCount(); };
 $('gamesClose').onclick = ()=>$('ovGames').classList.remove('show');
 
 function mgResize(){ const r=mg.getBoundingClientRect();
@@ -916,6 +935,9 @@ mgc.addEventListener('pointerdown', e=>{
   if (mgMode==='firefly') fireflyTap(x,y);
   else if (mgMode==='kick') kickTap(x,y);
   else if (mgMode==='walk') walkTap(x,y);
+  else if (mgMode==='berry') berryTap(x,y);
+  else if (mgMode==='memory') memoryTap(x,y);
+  else if (mgMode==='count') countTap(x,y);
   else if (mgMode==='feed'){ if (feedDown(x,y)) mgc.setPointerCapture(e.pointerId); }
   else if (mgMode==='push'){ if (pushDown(x,y)) mgc.setPointerCapture(e.pointerId); }
 });
@@ -1070,36 +1092,62 @@ function endGame(mode){
   if (mode==='kick'){
     P.happy=clamp(P.happy+Math.min(28,earned*2));
     P.energy=clamp(P.energy-10);
-    P.full=clamp(P.full-12);                       // chasing the ball burns hunger
+    P.full=clamp(P.full-12);
   } else if (mode==='push'){
     P.happy=clamp(P.happy+Math.min(24,earned*3));
     P.energy=clamp(P.energy-6);
     P.full=clamp(P.full-10);
+  } else if (mode==='berry'){
+    P.happy=clamp(P.happy+Math.min(22,earned*2));
+    P.energy=clamp(P.energy-5);
+    P.full=clamp(P.full-6);
+  } else if (mode==='memory'){
+    P.happy=clamp(P.happy+Math.min(22,earned*3));
+    P.energy=clamp(P.energy-4);
+    P.full=clamp(P.full-5);
+  } else if (mode==='count'){
+    P.happy=clamp(P.happy+Math.min(22,earned*3));
+    P.energy=clamp(P.energy-4);
+    P.full=clamp(P.full-5);
   } else {
     P.happy=clamp(P.happy+Math.min(20,earned*1.5));
     P.energy=clamp(P.energy-8);
-    P.full=clamp(P.full-8);                        // firefly catch — gentler
+    P.full=clamp(P.full-8);
   }
-  gainXP(mode==='kick' ? Math.max(3, Math.floor(earned/2))
-       : mode==='push' ? Math.max(2, earned)
+  gainXP(mode==='kick'   ? Math.max(3, Math.floor(earned/2))
+       : mode==='push'   ? Math.max(2, earned)
+       : mode==='memory' ? Math.max(3, earned)
+       : mode==='count'  ? Math.max(3, earned)
        : Math.max(2, Math.floor(earned/3)));
   if (earned>0) sfx('endgame');
   save(); refresh();
   $('mgmsg').style.display='flex';
   let title, tail;
+  $('mghud').style.display='flex';
   if (mode==='kick'){
     title = `⚽ ${earned} 🪙`;
     tail = `${P.name} chased every kick — ${earned>0?`+${earned} coins and a very happy heart.`:'still a lovely romp!'}`;
   } else if (mode==='push'){
     title = `🕳️ ${earned} 🪙`;
     tail = `${P.name} watched ${earned} thing${earned===1?'':'s'} drop into the hole. ${earned>0?`+${earned} coins!`:'Better roll next time.'}`;
+  } else if (mode==='berry'){
+    title = `🍓 ${earned} 🪙`;
+    tail = `${P.name} helped sort ${earned} treat${earned===1?'':'s'}! ${earned>=20?'Brilliant colours!':earned>10?'Great sorting!':'Keep practising!'}`;
+  } else if (mode==='memory'){
+    const pairs = mgState.cards.length/2;
+    title = `🌸 ${earned} 🪙`;
+    tail = `${P.name} found ${earned} of ${pairs} pairs! ${earned===pairs?'Perfect memory!':'Good try!'}`;
+  } else if (mode==='count'){
+    title = `🌻 ${earned} 🪙`;
+    tail = `${P.name} counted along! ${mgState.score} of ${mgState.totalRounds} right.`;
   } else {
     title = `🎣 ${earned} 🪙`;
     tail = `${P.name} had a lovely time. ${earned>0?`+${earned} coins, and a happier heart.`:'Better luck next time!'}`;
   }
   $('mgmsg').innerHTML=`<h2>${title}</h2><p>${tail}</p>
     <button class="btn" id="mgAgain">Play again</button><button class="btn ghost" id="mgDone">Done</button>`;
-  $('mgAgain').onclick = mode==='kick' ? startKick : mode==='push' ? startPush : startFirefly;
+  $('mgAgain').onclick = mode==='kick' ? startKick : mode==='push' ? startPush
+    : mode==='berry' ? startBerry : mode==='memory' ? startMemory : mode==='count' ? startCount : startFirefly;
   $('mgDone').onclick  = closeGame;
 }
 
@@ -1418,6 +1466,252 @@ function drawPushPet(s, ts){
   mctx.beginPath(); mctx.arc(x, y + R*0.30, R*0.16, 0.15*Math.PI, 0.85*Math.PI); mctx.stroke();
 }
 
+// ===================== LEARNING MINI-GAMES =====================
+
+// shared: rounded rect path helper
+function rr(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath();
+}
+
+// ---------- Berry Sort ----------
+function startBerry(){
+  mgMode='berry';
+  mgState={ score:0, time:30, last:performance.now(), running:false, w:0, h:0, current:null, shake:0, pops:[] };
+  openMG();
+  $('mgScore').textContent=0; $('mgTime').textContent=30;
+  nextSortBerry();
+  $('mgmsg').innerHTML=`<h2>🍓 Berry Sort</h2>
+    <p>Tap the basket that matches each berry! Help ${P.name} sort the harvest.</p>
+    <button class="btn" id="mgStart">Start</button>
+    <button class="btn ghost" id="mgQuit">Maybe later</button>`;
+  $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); requestAnimationFrame(berryFrame); };
+  $('mgQuit').onclick=closeGame;
+}
+function nextSortBerry(){ mgState.current=SORT_BERRIES[Math.floor(Math.random()*SORT_BERRIES.length)]; }
+function berryTap(x,y){
+  const s=mgState; if (!s.current||s.shake>0) return;
+  const bw=s.w/3, by=s.h*0.64;
+  if (y<by) return;
+  const bi=Math.floor(x/bw); if (bi<0||bi>2) return;
+  if (bi===s.current.basket){
+    s.score++; $('mgScore').textContent=s.score;
+    sfx('firefly');
+    s.pops.push({x:bw*bi+bw/2, y:by+s.h*0.16, life:1, txt:s.current.e});
+    nextSortBerry();
+  } else {
+    s.shake=300; sfx('kick');
+  }
+}
+function berryFrame(ts){
+  if(!mgState||!mgState.running) return;
+  const dt=Math.min(50,ts-mgState.last); mgState.last=ts;
+  const s=mgState, w=s.w, h=s.h;
+  s.time-=dt/1000; if(s.shake>0) s.shake-=dt;
+  $('mgTime').textContent=Math.max(0,Math.ceil(s.time));
+  const g=mctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#dff8e8'); g.addColorStop(1,'#b8e8a0');
+  mctx.fillStyle=g; mctx.fillRect(0,0,w,h);
+  mctx.fillStyle='#94c870'; mctx.fillRect(0,h*0.60,w,h*0.40);
+  // current item — large, centred, shake on wrong
+  const shakeX=s.shake>0?Math.sin(s.shake*0.05)*(s.shake/30)*8:0;
+  mctx.font=`${Math.min(w,h)*0.24}px serif`;
+  mctx.textAlign='center'; mctx.textBaseline='middle';
+  mctx.fillText(s.current.e, w/2+shakeX, h*0.32);
+  mctx.fillStyle='#5a4a3a';
+  mctx.font=`bold ${h*0.052}px sans-serif`; mctx.textBaseline='alphabetic';
+  mctx.fillText('Which basket?', w/2, h*0.57);
+  // 3 baskets
+  const bw=w/3, bh=h*0.29, by=h*0.63;
+  for(let i=0;i<3;i++){
+    const bc=SORT_BERRIES[i], bx=bw*i;
+    mctx.fillStyle=bc.fill+'33';
+    rr(mctx,bx+8,by,bw-16,bh,14); mctx.fill();
+    mctx.strokeStyle=bc.fill; mctx.lineWidth=3;
+    rr(mctx,bx+8,by,bw-16,bh,14); mctx.stroke();
+    mctx.font=`${Math.min(w,h)*0.10}px serif`;
+    mctx.textAlign='center'; mctx.textBaseline='middle';
+    mctx.fillText(bc.e, bx+bw/2, by+bh*0.44);
+    mctx.fillStyle='#5a4a3a';
+    mctx.font=`bold ${h*0.038}px sans-serif`; mctx.textBaseline='alphabetic';
+    mctx.fillText(bc.colorName, bx+bw/2, by+bh*0.86);
+  }
+  for(let i=s.pops.length-1;i>=0;i--){
+    const o=s.pops[i]; o.y-=0.04*dt; o.life-=dt*0.0018;
+    if(o.life<=0){s.pops.splice(i,1); continue;}
+    mctx.globalAlpha=o.life; mctx.font='28px serif';
+    mctx.textAlign='center'; mctx.fillText(o.txt,o.x,o.y); mctx.globalAlpha=1;
+  }
+  if(s.time<=0){ endGame('berry'); return; }
+  requestAnimationFrame(berryFrame);
+}
+
+// ---------- Memory Meadow ----------
+const MEMORY_EMOJIS=['🌸','🦋','🍄','🌻','🐝','🌿','🍓','🐞'];
+
+function startMemory(){
+  mgMode='memory';
+  const pairs=MEMORY_EMOJIS.slice(0,6);
+  const deck=[...pairs,...pairs];
+  for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
+  const cards=deck.map(e=>({ e, flipped:false, matched:false }));
+  mgState={ cards, flipped:[], lockFlip:false, lockTimer:0, score:0, time:90, last:performance.now(), running:false, w:0, h:0, pops:[] };
+  openMG();
+  $('mgScore').textContent=0; $('mgTime').textContent=90;
+  $('mgmsg').innerHTML=`<h2>🌸 Memory Meadow</h2>
+    <p>Flip the cards to find the matching pairs! ${P.name} loves this game.</p>
+    <button class="btn" id="mgStart">Start</button>
+    <button class="btn ghost" id="mgQuit">Maybe later</button>`;
+  $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); requestAnimationFrame(memoryFrame); };
+  $('mgQuit').onclick=closeGame;
+}
+function memoryLayout(s){
+  const cols=4, rows=3, gap=8, pad=14, topPad=50;
+  const cw=Math.floor((s.w-pad*2-gap*(cols-1))/cols);
+  const ch=Math.floor((s.h-topPad-pad*2-gap*(rows-1))/rows);
+  return {cols,rows,cw,ch,ox:pad,oy:topPad+pad,gap};
+}
+function memoryTap(x,y){
+  const s=mgState; if(s.lockFlip||s.flipped.length>=2) return;
+  const {cols,rows,cw,ch,ox,oy,gap}=memoryLayout(s);
+  const col=Math.floor((x-ox)/(cw+gap)), row=Math.floor((y-oy)/(ch+gap));
+  if(col<0||col>=cols||row<0||row>=rows) return;
+  const idx=row*cols+col; if(idx>=s.cards.length) return;
+  const c=s.cards[idx]; if(c.flipped||c.matched) return;
+  c.flipped=true; s.flipped.push(idx); sfx('kick');
+  if(s.flipped.length===2){
+    const [a,b]=s.flipped.map(i=>s.cards[i]);
+    if(a.e===b.e){
+      a.matched=b.matched=true; s.score++; $('mgScore').textContent=s.score;
+      sfx('firefly'); s.pops.push({x:s.w/2,y:s.h*0.45,life:1,txt:'💗'}); s.flipped=[];
+      if(s.cards.every(c=>c.matched)){ setTimeout(()=>endGame('memory'),500); return; }
+    } else { s.lockFlip=true; s.lockTimer=900; }
+  }
+}
+function memoryFrame(ts){
+  if(!mgState||!mgState.running) return;
+  const dt=Math.min(50,ts-mgState.last); mgState.last=ts;
+  const s=mgState;
+  s.time-=dt/1000; $('mgTime').textContent=Math.max(0,Math.ceil(s.time));
+  if(s.lockTimer>0){ s.lockTimer-=dt; if(s.lockTimer<=0){ s.lockFlip=false; s.flipped.forEach(i=>s.cards[i].flipped=false); s.flipped=[]; } }
+  const g=mctx.createLinearGradient(0,0,0,s.h);
+  g.addColorStop(0,'#e8f8d8'); g.addColorStop(1,'#c0e8a0');
+  mctx.fillStyle=g; mctx.fillRect(0,0,s.w,s.h);
+  const {cols,rows,cw,ch,ox,oy,gap}=memoryLayout(s);
+  mctx.font=`${Math.min(cw,ch)*0.56}px serif`;
+  mctx.textAlign='center'; mctx.textBaseline='middle';
+  for(let i=0;i<s.cards.length;i++){
+    const col=i%cols, row=Math.floor(i/cols);
+    const x=ox+col*(cw+gap), y=oy+row*(ch+gap), c=s.cards[i];
+    mctx.fillStyle=c.matched?'#b8eaa8':c.flipped?'#fffaf1':'#c0a882';
+    rr(mctx,x,y,cw,ch,10); mctx.fill();
+    mctx.strokeStyle=c.matched?'#78c858':c.flipped?'#e07a9b':'#a08060'; mctx.lineWidth=2;
+    rr(mctx,x,y,cw,ch,10); mctx.stroke();
+    if(c.flipped||c.matched){ mctx.fillText(c.e,x+cw/2,y+ch/2); }
+    else { mctx.globalAlpha=0.35; mctx.fillText('🌿',x+cw/2,y+ch/2); mctx.globalAlpha=1; }
+  }
+  mctx.textBaseline='alphabetic';
+  for(let i=s.pops.length-1;i>=0;i--){
+    const o=s.pops[i]; o.y-=0.03*dt; o.life-=dt*0.0012;
+    if(o.life<=0){s.pops.splice(i,1); continue;}
+    mctx.globalAlpha=o.life; mctx.font='32px serif';
+    mctx.textAlign='center'; mctx.fillText(o.txt,o.x,o.y); mctx.globalAlpha=1;
+  }
+  if(s.time<=0){ endGame('memory'); return; }
+  requestAnimationFrame(memoryFrame);
+}
+
+// ---------- Counting Garden ----------
+const COUNT_EMOJIS=['🍓','🌼','🍄','🦋','🌿','🐞','🪨','🌸'];
+function startCount(){
+  mgMode='count';
+  mgState={ items:[], currentEmoji:'🍓', choices:[], correct:0, score:0,
+    round:0, totalRounds:8, phase:'question', resultTimer:0, resultCorrect:false,
+    last:performance.now(), running:false, w:0, h:0, pops:[] };
+  openMG();
+  $('mghud').style.display='none';
+  $('mgmsg').innerHTML=`<h2>🌻 Counting Garden</h2>
+    <p>Count what ${P.name} finds and tap the right number!</p>
+    <button class="btn" id="mgStart">Start</button>
+    <button class="btn ghost" id="mgQuit">Maybe later</button>`;
+  $('mgStart').onclick=()=>{ $('mgmsg').style.display='none'; mgState.running=true; mgState.last=performance.now(); newCountRound(); requestAnimationFrame(countFrame); };
+  $('mgQuit').onclick=closeGame;
+}
+function newCountRound(){
+  const s=mgState;
+  const maxN=s.score<4?5:10;
+  const n=1+Math.floor(Math.random()*maxN);
+  s.correct=n; s.currentEmoji=COUNT_EMOJIS[Math.floor(Math.random()*COUNT_EMOJIS.length)];
+  // grid-based placement to avoid overlap
+  const cols=Math.ceil(Math.sqrt(n*2.2)), rows=Math.ceil(n/cols)+1;
+  const positions=[];
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++)
+    positions.push({x:0.12+(c/(cols-1||1))*0.76+(Math.random()-.5)*0.06, y:0.28+(r/(rows-1||1))*0.38+(Math.random()-.5)*0.06});
+  positions.sort(()=>Math.random()-.5);
+  s.items=positions.slice(0,n).map(p=>({x:p.x,y:p.y,wob:Math.random()*6.28}));
+  const wrong=new Set();
+  while(wrong.size<2){ const w=1+Math.floor(Math.random()*Math.max(n+3,10)); if(w!==n) wrong.add(w); }
+  s.choices=[n,...wrong].sort(()=>Math.random()-.5);
+  s.phase='question'; s.resultTimer=0;
+}
+function countTap(x,y){
+  const s=mgState; if(s.phase!=='question') return;
+  const btnH=s.h*0.14, btnY=s.h*0.80, bw=s.w/3;
+  if(y<btnY||y>btnY+btnH) return;
+  const bi=Math.floor(x/bw); if(bi<0||bi>2) return;
+  if(s.choices[bi]===s.correct){ s.score++; sfx('daily'); s.pops.push({x:s.w/2,y:s.h*0.50,life:1,txt:'⭐'}); s.resultCorrect=true; }
+  else { sfx('sleep'); s.resultCorrect=false; }
+  s.phase='result'; s.resultTimer=900;
+}
+function countFrame(ts){
+  if(!mgState||!mgState.running) return;
+  const dt=Math.min(50,ts-mgState.last); mgState.last=ts;
+  const s=mgState, w=s.w, h=s.h;
+  if(s.phase==='result'){ s.resultTimer-=dt; if(s.resultTimer<=0){ s.round++; if(s.round>=s.totalRounds){ endGame('count'); return; } newCountRound(); } }
+  const g=mctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#e8f8d8'); g.addColorStop(1,'#c8f0a8');
+  mctx.fillStyle=g; mctx.fillRect(0,0,w,h);
+  mctx.fillStyle='#a0d880'; mctx.fillRect(0,h*0.74,w,h*0.26);
+  // pet + speech bubble
+  const petR=Math.min(w,h)*0.085, petX=w*0.5, petY=h*0.165;
+  const bubH=h*0.096, bubW=w*0.68, bubX=petX-bubW/2, bubTop=petY-petR-bubH-4;
+  mctx.fillStyle='#fffaf1'; rr(mctx,bubX,bubTop,bubW,bubH,10); mctx.fill();
+  mctx.strokeStyle='#e3d2b6'; mctx.lineWidth=2; rr(mctx,bubX,bubTop,bubW,bubH,10); mctx.stroke();
+  mctx.fillStyle='#fffaf1'; mctx.beginPath(); mctx.moveTo(petX-7,bubTop+bubH); mctx.lineTo(petX+7,bubTop+bubH); mctx.lineTo(petX,bubTop+bubH+9); mctx.closePath(); mctx.fill();
+  mctx.fillStyle='#5a4a3a'; mctx.font=`bold ${h*0.044}px sans-serif`;
+  mctx.textAlign='center'; mctx.textBaseline='middle';
+  mctx.fillText(`How many ${s.currentEmoji}?`, petX, bubTop+bubH/2); mctx.textBaseline='alphabetic';
+  drawKickPet(petX, petY+petR*0.85, petR, ts);
+  // round indicator
+  mctx.fillStyle='#8a7560'; mctx.font=`bold ${h*0.038}px sans-serif`; mctx.textAlign='right';
+  mctx.fillText(`${s.round+1} / ${s.totalRounds}`, w-14, 38);
+  // items
+  mctx.textAlign='center'; mctx.textBaseline='middle';
+  for(const it of s.items){ it.wob+=0.025; mctx.font=`${h*0.076}px serif`; mctx.fillText(s.currentEmoji, it.x*w, it.y*h+Math.sin(it.wob)*2.5); }
+  mctx.textBaseline='alphabetic';
+  // number buttons
+  const btnH=h*0.14, btnY=h*0.80, bw=w/3;
+  for(let i=0;i<3;i++){
+    const lit=s.phase==='result'&&s.choices[i]===s.correct;
+    mctx.fillStyle=lit?'#9de880':'#fffaf1'; rr(mctx,bw*i+7,btnY,bw-14,btnH,14); mctx.fill();
+    mctx.strokeStyle=lit?'#6ab858':'#c8a87a'; mctx.lineWidth=2; rr(mctx,bw*i+7,btnY,bw-14,btnH,14); mctx.stroke();
+    mctx.fillStyle='#5a4a3a'; mctx.font=`bold ${btnH*0.52}px sans-serif`;
+    mctx.textAlign='center'; mctx.textBaseline='middle'; mctx.fillText(s.choices[i],bw*i+bw/2,btnY+btnH/2);
+    mctx.textBaseline='alphabetic';
+  }
+  for(let i=s.pops.length-1;i>=0;i--){
+    const o=s.pops[i]; o.y-=0.03*dt; o.life-=dt*0.0012;
+    if(o.life<=0){s.pops.splice(i,1); continue;}
+    mctx.globalAlpha=o.life; mctx.font='30px serif';
+    mctx.textAlign='center'; mctx.fillText(o.txt,o.x,o.y); mctx.globalAlpha=1;
+  }
+  requestAnimationFrame(countFrame);
+}
+
 // ---------- Feed (flick from plate to pet) ----------
 // Pick food in shop → this mini-game opens. Drag the snack off the plate at the
 // bottom and flick it up to the Mossling's open mouth. Missed flicks bounce back
@@ -1608,6 +1902,18 @@ function claimDaily(d){
   sfx('daily');
   toast(`+${d.bonus} coins · ${P ? P.name : 'they'} feels loved 💚`);
 }
+
+// ---- Creature Riddle answers ----
+const CREATURES = [
+  {e:'🦋',n:'butterfly', clues:'Has colorful wings · Starts as a caterpillar · Loves flowers',         decoy:{e:'🐝',n:'bee'}},
+  {e:'🐝',n:'bee',       clues:'Makes honey · Has yellow and black stripes · Lives in a hive',          decoy:{e:'🦟',n:'fly'}},
+  {e:'🐸',n:'frog',      clues:'Loves puddles · Starts life as a tadpole · Catches flies with its tongue', decoy:{e:'🦎',n:'lizard'}},
+  {e:'🦔',n:'hedgehog',  clues:'Has sharp spines · Curls into a ball when scared · Comes out at night', decoy:{e:'🐿️',n:'squirrel'}},
+  {e:'🦉',n:'owl',       clues:'Can turn its head nearly all the way · Sleeps in the daytime · Hoots',  decoy:{e:'🐦',n:'bird'}},
+  {e:'🐌',n:'snail',     clues:'Carries its home on its back · Leaves a shiny trail · Is very slow',    decoy:{e:'🪲',n:'beetle'}},
+  {e:'🐿️',n:'squirrel', clues:'Hides nuts for winter · Has a big fluffy tail · Loves to climb',        decoy:{e:'🐇',n:'rabbit'}},
+  {e:'🐇',n:'rabbit',    clues:'Has very long ears · Hops everywhere · Loves carrots',                  decoy:{e:'🐿️',n:'squirrel'}},
+];
 
 // ===================== EXPLORE — world map =====================
 // Each PLACE is a tappable location on the map with a per-pet cooldown.
@@ -1805,13 +2111,14 @@ function rollEncounter(s){
   const lockedIds = PLACES.map(p => p.id).filter(id => !S.unlocked.includes(id));
   const canDiscover = lockedIds.length > 0 && !s.unlockedPlace;     // one unlock max per walk
   const weights = [
-    ['trinket',  26],
-    ['friend',   20],
-    ['coins',    10],
-    ['snack',     9],
-    ['rest',      8],
-    ['fork',     11],
-    ['stumble',   7],
+    ['trinket',  24],
+    ['friend',   18],
+    ['coins',     9],
+    ['snack',     8],
+    ['rest',      7],
+    ['fork',     10],
+    ['stumble',   6],
+    ['riddle',    9],
     ['discover', canDiscover ? 9 : 0],
   ];
   const total = weights.reduce((a, [,w]) => a + w, 0);
@@ -1825,6 +2132,7 @@ function rollEncounter(s){
         case 'coins':    return makeCoins(s);
         case 'snack':    return makeSnack(s);
         case 'rest':     return makeRest(s);
+        case 'riddle':   return makeRiddle(s);
         case 'fork':     return makeFork(s);
         case 'stumble':  return makeStumble(s);
         case 'discover': return makeDiscovery(s, lockedIds);
@@ -1951,6 +2259,36 @@ function makeDiscovery(s, lockedIds){
   };
 }
 
+function makeRiddle(s){
+  const c=pickRandom(CREATURES);
+  const showResult=(correct)=>{
+    if(correct){
+      sfx('daily');
+      $('mgmsg').innerHTML=`<h2>${c.e} Yes! A ${c.n}!</h2>
+        <p>${P.name} jumps with joy!</p>
+        <button class="btn" id="encGo">Onward</button>`;
+      P.happy=clamp(P.happy+5); gainXP(2); save();
+    } else {
+      sfx('sleep');
+      $('mgmsg').innerHTML=`<h2>Not quite!</h2>
+        <p>It was a ${c.e} ${c.n}! ${P.name} will remember next time.</p>
+        <button class="btn ghost" id="encGo">Onward</button>`;
+      P.happy=clamp(P.happy+1);
+    }
+    $('encGo').onclick=()=>resumeWalk(s);
+  };
+  const swap=Math.random()<0.5;
+  return {
+    e:'❓', title:'Who am I?', body:c.clues, sfx:'wake',
+    choices: swap ? [
+      {label:`${c.decoy.e} ${c.decoy.n}`, apply:()=>{ showResult(false); return true; }},
+      {label:`${c.e} ${c.n}`,             apply:()=>{ showResult(true);  return true; }},
+    ] : [
+      {label:`${c.e} ${c.n}`,             apply:()=>{ showResult(true);  return true; }},
+      {label:`${c.decoy.e} ${c.decoy.n}`, apply:()=>{ showResult(false); return true; }},
+    ],
+  };
+}
 function showEncounter(s){
   const ev = rollEncounter(s);
   s.currentEv = ev;
@@ -1964,8 +2302,8 @@ function showEncounter(s){
       </div>`;
     $('mgmsg').querySelectorAll('[data-i]').forEach(btn => {
       btn.onclick = ()=>{
-        ev.choices[parseInt(btn.dataset.i)].apply(s);
-        resumeWalk(s);
+        const handled = ev.choices[parseInt(btn.dataset.i)].apply(s);
+        if (!handled) resumeWalk(s);
       };
     });
   } else {
